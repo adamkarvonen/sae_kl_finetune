@@ -33,7 +33,7 @@ class TopKSAE(base_sae.BaseSAE):
 
     def encode(self, x: torch.Tensor):
         """Note: x can be either shape (B, F) or (B, L, F)"""
-        post_relu_feat_acts_BF = nn.functional.relu((x - self.b_dec) @ self.W_enc + self.b_enc)
+        post_relu_feat_acts_BF = nn.functional.relu(self.encoder(x - self.b_dec))
 
         if self.use_threshold and False:
             if self.threshold < 0:
@@ -53,7 +53,7 @@ class TopKSAE(base_sae.BaseSAE):
         return encoded_acts_BF
 
     def decode(self, feature_acts: torch.Tensor):
-        return (feature_acts @ self.W_dec) + self.b_dec
+        return self.decoder(feature_acts) + self.b_dec
 
     def forward(self, x: torch.Tensor):
         x = self.encode(x)
@@ -107,9 +107,9 @@ def load_dictionary_learning_topk_sae(
 
     # Map old keys to new keys
     key_mapping = {
-        "encoder.weight": "W_enc",
-        "decoder.weight": "W_dec",
-        "encoder.bias": "b_enc",
+        "encoder.weight": "encoder.weight",
+        "decoder.weight": "decoder.weight",
+        "encoder.bias": "encoder.bias",
         "bias": "b_dec",
         "k": "k",
     }
@@ -122,16 +122,12 @@ def load_dictionary_learning_topk_sae(
     # Create a new dictionary with renamed keys
     renamed_params = {key_mapping.get(k, k): v for k, v in pt_params.items()}
 
-    # due to the way torch uses nn.Linear, we need to transpose the weight matrices
-    renamed_params["W_enc"] = renamed_params["W_enc"].T
-    renamed_params["W_dec"] = renamed_params["W_dec"].T
-
     # Print renamed keys for debugging
     print("Renamed keys in state_dict:", renamed_params.keys())
 
     sae = TopKSAE(
         d_in=renamed_params["b_dec"].shape[0],
-        d_sae=renamed_params["b_enc"].shape[0],
+        d_sae=renamed_params["encoder.bias"].shape[0],
         k=k,
         model_name=model_name,
         hook_layer=layer,  # type: ignore
@@ -144,7 +140,7 @@ def load_dictionary_learning_topk_sae(
 
     sae.to(device=device, dtype=dtype)
 
-    d_sae, d_in = sae.W_dec.data.shape
+    d_sae, d_in = sae.decoder.weight.data.T.shape
 
     assert d_sae >= d_in
 

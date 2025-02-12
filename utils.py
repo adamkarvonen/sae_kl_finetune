@@ -4,6 +4,7 @@ from itertools import islice
 from typing import Generator, List, Tuple, Optional, Any, Dict
 import time
 import pickle
+from enum import Enum
 
 import json
 import torch
@@ -23,6 +24,12 @@ from eleuther_sae.sae.data import chunk_and_tokenize
 ########################################
 ### MODEL ARCHITECTURE CONFIGS ###
 ########################################
+
+
+class TrainingType(Enum):
+    LORA = "lora"  # Standard LoRA training
+    SAE_LORA = "sae_lora"  # SAE with LoRA training
+    SAE_FULL_FINETUNE = "sae_full_finetune"  # SAE with full model fine-tuning
 
 
 @dataclass
@@ -402,6 +409,7 @@ def _get_data_filenames(
     peft_rank: int,
     num_train_examples: int,
     use_16_bit: bool,
+    training_type: TrainingType,
 ) -> Tuple[str, str, str]:
     """
     Helper function to generate filenames for CE increase and validation losses data.
@@ -416,7 +424,14 @@ def _get_data_filenames(
             parts = sae_path.split("/", 1)
             sae_path = f"{parts[1].replace('/', '_')}"
 
-    peft_range = f"{peft_layers[0]}-{peft_layers[-1]}" if len(peft_layers) > 1 else peft_layers[0]
+    if training_type == TrainingType.SAE_LORA:
+        peft_range = training_type.value
+    elif training_type == TrainingType.SAE_FULL_FINETUNE:
+        peft_range = training_type.value
+    else:
+        peft_range = (
+            f"{peft_layers[0]}-{peft_layers[-1]}" if len(peft_layers) > 1 else peft_layers[0]
+        )
 
     # Build base paths
     base_path = f"data/scaling" if sae_from_hf else f"data/TopK"
@@ -446,6 +461,7 @@ def save_data(
         peft_rank=kwargs["peft_rank"],
         num_train_examples=kwargs["num_train_examples"],
         use_16_bit=kwargs["use_16_bit"],
+        training_type=kwargs["training_type"],
     )
 
     os.makedirs(os.path.dirname(CE_increase_filename), exist_ok=True)
@@ -478,6 +494,7 @@ def load_data(**kwargs) -> Tuple[dict, dict, dict]:
         peft_rank=kwargs["peft_rank"],
         num_train_examples=kwargs["num_train_examples"],
         use_16_bit=kwargs["use_16_bit"],
+        training_type=kwargs["training_type"],
     )
 
     try:
@@ -509,6 +526,7 @@ def save_model(peft_model, rank, **kwargs) -> None:
     peft_layers = kwargs["peft_layers"]
     peft_type = kwargs["peft_type"]
     sae_from_hf = kwargs["sae_from_hf"]
+    training_type = kwargs["training_type"]
 
     if sae_path:
         if not sae_from_hf:
@@ -519,7 +537,12 @@ def save_model(peft_model, rank, **kwargs) -> None:
 
     model_name = model_name.split("/")[-1]
 
-    peft_range = f"{peft_layers[0]}-{peft_layers[-1]}" if len(peft_layers) > 1 else peft_layers[0]
+    if training_type == TrainingType.SAE_LORA or training_type == TrainingType.SAE_FULL_FINETUNE:
+        peft_range = training_type.value
+    else:
+        peft_range = (
+            f"{peft_layers[0]}-{peft_layers[-1]}" if len(peft_layers) > 1 else peft_layers[0]
+        )
 
     base_path = f"saved_models/{model_name}"
     base_path = f"{base_path}/{sae_path}" if sae_path else f"{base_path}/base"
@@ -581,6 +604,7 @@ def evaluate(
 
 def train_model(
     peft_model: PreTrainedModel,
+    sae,
     train_gen: Generator[str, None, None],
     val_dataset: List[torch.Tensor],
     args: Any,
@@ -590,6 +614,7 @@ def train_model(
     initial_loss: Optional[float] = None,
     base_loss: Optional[float] = None,
     track_evals: bool = True,
+    sae_only: bool = False,
 ) -> Tuple[List[float], List[float]]:
     """Train the model using KL divergence loss"""
     print("Training model with KL divergence loss")
@@ -620,9 +645,12 @@ def train_model(
                 }
             )
 
-        optimizer = optim.AdamW(peft_model.parameters(), lr=5e-5)
+        if sae_only:
+            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
+        else:
+            optimizer = optim.AdamW(peft_model.parameters(), lr=5e-5)
+            peft_model.train()
 
-        peft_model.train()
         total_loss = 0
         examples_since_last_eval = 0
 
@@ -642,12 +670,17 @@ def train_model(
                 GlobalSAE.current_batch = inputs.detach()
                 with torch.no_grad():
                     GlobalSAE.use_sae = False
-                    with peft_model.disable_adapter():
+
+                    if sae_only:
                         base_outputs = peft_model(inputs.to(peft_model.device))
-                        base_logits = base_outputs.logits
-                        base_probs = torch.nn.functional.softmax(base_logits, dim=-1).to(
-                            peft_model.device
-                        )
+                    else:
+                        with peft_model.disable_adapter():
+                            base_outputs = peft_model(inputs.to(peft_model.device))
+
+                    base_logits = base_outputs.logits
+                    base_probs = torch.nn.functional.softmax(base_logits, dim=-1).to(
+                        peft_model.device
+                    )
 
                 GlobalSAE.use_sae = True
                 peft_outputs = peft_model(inputs)
@@ -660,7 +693,11 @@ def train_model(
                 )
 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(peft_model.parameters(), max_norm=1.0)
+
+                if sae_only:
+                    torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
+                else:
+                    torch.nn.utils.clip_grad_norm_(peft_model.parameters(), max_norm=1.0)
                 optimizer.step()
 
                 total_loss += loss.item() * batch_size

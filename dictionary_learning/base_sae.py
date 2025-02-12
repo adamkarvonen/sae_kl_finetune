@@ -22,13 +22,9 @@ class BaseSAE(nn.Module, ABC):
         super().__init__()
 
         # Required parameters
-        self.W_enc = nn.Parameter(torch.zeros(d_in, d_sae))
-        self.W_dec = nn.Parameter(torch.zeros(d_sae, d_in))
+        self.decoder = nn.Linear(d_sae, d_in, bias=False)
+        self.encoder = nn.Linear(d_in, d_sae)
 
-        # b_enc and b_dec don't have to be used in the encode/decode methods
-        # if your SAE doesn't use biases, leave them as zeros
-        # NOTE: core/main.py checks for cosine similarity with b_enc, so it's nice to have the field available
-        self.b_enc = nn.Parameter(torch.zeros(d_sae))
         self.b_dec = nn.Parameter(torch.zeros(d_in))
 
         # Required attributes
@@ -78,10 +74,14 @@ class BaseSAE(nn.Module, ABC):
         """
         It's important to check that the decoder weights are normalized.
         """
-        norms = torch.norm(self.W_dec, dim=1).to(dtype=self.dtype, device=self.device)
+        norms = torch.norm(self.decoder.weight.data.T, dim=1).to(
+            dtype=self.dtype, device=self.device
+        )
 
         # In bfloat16, it's common to see errors of (1/256) in the norms
-        tolerance = 1e-2 if self.W_dec.dtype in [torch.bfloat16, torch.float16] else 1e-5
+        tolerance = (
+            1e-2 if self.decoder.weight.data.T.dtype in [torch.bfloat16, torch.float16] else 1e-5
+        )
 
         if torch.allclose(norms, torch.ones_like(norms), atol=tolerance):
             return True
@@ -92,8 +92,8 @@ class BaseSAE(nn.Module, ABC):
 
     @torch.no_grad()
     def test_sae(self, model_name: str):
-        assert self.W_dec.shape == (self.cfg.d_sae, self.cfg.d_in)
-        assert self.W_enc.shape == (self.cfg.d_in, self.cfg.d_sae)
+        assert self.decoder.weight.data.T.shape == (self.cfg.d_sae, self.cfg.d_in)
+        assert self.encoder.weight.data.T.shape == (self.cfg.d_in, self.cfg.d_sae)
 
         model = HookedTransformer.from_pretrained(model_name, device=self.device)
 

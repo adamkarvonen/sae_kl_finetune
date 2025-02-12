@@ -14,7 +14,7 @@ import torch
 from peft import get_peft_model, LoraConfig, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
+import utils
 from utils import (
     get_target_modules,
     get_peft_model_layers,
@@ -27,6 +27,7 @@ from utils import (
     train_model,
     evaluate,
     _get_data_filenames,
+    TrainingType,
 )
 
 
@@ -51,6 +52,7 @@ def main(
     peft_layers: List[int],  # List of peft layers
     peft_type: str,  # "attn", "mlp", "pre-mlp", "both", "gate", "up"
     num_train_examples: int,
+    training_type: TrainingType,
     peft_rank: int = 64,  # peft rank
     track_evals: bool = False,  # Whether to track evals
     device: int = 0,
@@ -64,7 +66,11 @@ def main(
     device_name = f"cuda:{device}" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
     torch.cuda.set_device(device)
-    use_16_bit = True
+
+    sae_only = False
+
+    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+        sae_only = True
 
     # initialize_auth()
 
@@ -84,8 +90,6 @@ def main(
     sae_module = topk_sae.load_dictionary_learning_topk_sae(
         repo_id=sae_repo, filename=sae_path, model_name=model_name, device=device, dtype=dtype
     )
-    sae_module.eval()
-    sae_module.requires_grad_(False)
     print("sae module", sae_module)
 
     model.requires_grad_(False)
@@ -108,6 +112,7 @@ def main(
         sae_from_hf=sae_from_hf,
         num_train_examples=num_train_examples,
         use_16_bit=use_16_bit,
+        training_type=training_type,
     )[0]
     print(f"CE_increase_filename: {CE_increase_filename}")
     if os.path.exists(CE_increase_filename):
@@ -117,19 +122,42 @@ def main(
 
     # train_gen, _ = hf_dataset_to_generator(dataset, tokenizer, args)
 
-    target_modules = get_target_modules(model_name, peft_layers, peft_type)
-    lora_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        r=peft_rank,
-        lora_alpha=32,
-        lora_dropout=0.1,
-        bias="none",
-        target_modules=target_modules,
-    )
+    if training_type == TrainingType.LORA:
+        sae_module.eval()
+        sae_module.requires_grad_(False)
+        target_modules = get_target_modules(model_name, peft_layers, peft_type)
+        lora_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=peft_rank,
+            lora_alpha=peft_rank,
+            lora_dropout=0.1,
+            bias="none",
+            target_modules=target_modules,
+        )
 
-    peft_model = get_peft_model(model, lora_config)
-    peft_model.print_trainable_parameters()
-    peft_model = peft_model.to(device)
+        peft_model = get_peft_model(model, lora_config)
+        peft_model.print_trainable_parameters()
+        peft_model = peft_model.to(device)
+        peft_model_layers = get_peft_model_layers(
+            peft_model, model_name
+        )  # varies based on the model architecture
+    else:
+        peft_model = model
+        peft_model_layers = utils.get_model_layers(peft_model, model_name)
+
+    if training_type == TrainingType.SAE_LORA:
+        sae_module.requires_grad_(False)
+        target_modules = ["encoder", "decoder"]
+        lora_config = LoraConfig(
+            task_type=None,
+            r=peft_rank,
+            lora_alpha=32,
+            lora_dropout=0.1,
+            bias="none",
+            target_modules=target_modules,
+        )
+        sae_module = get_peft_model(sae_module, lora_config)
+        sae_module.print_trainable_parameters()
 
     print("BASE MODEL LOSS")
     base_loss = evaluate(model, val_dataset)
@@ -139,9 +167,6 @@ def main(
     hook_handle = None
     if sae_path:
         print(f"Registering SAE hook (rank {peft_rank})")
-        peft_model_layers = get_peft_model_layers(
-            peft_model, model_name
-        )  # varies based on the model architecture
         hook_handle = peft_model_layers[sae_layer].register_forward_hook(
             get_sae_hook(sae_module, tokenizer, sae_from_hf)
         )
@@ -152,6 +177,7 @@ def main(
 
     val_losses, total_training_minutes = train_model(
         peft_model=peft_model,
+        sae=sae_module,
         train_gen=train_gen,
         val_dataset=val_dataset,
         args=args,
@@ -161,6 +187,7 @@ def main(
         initial_loss=initial_loss,
         base_loss=base_loss,
         track_evals=track_evals,
+        sae_only=sae_only,
     )
     converged_loss = val_losses[-1]
 
@@ -209,7 +236,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--LoRA_layers",
         type=str,
-        choices=["all", "after", "single"],
+        choices=["all", "after", "single", "sae_lora", "sae_full_finetune"],
         default="all",
         help="Which layers to apply LoRA to",
     )
@@ -219,7 +246,7 @@ if __name__ == "__main__":
         "--num_train_examples",
         type=int,
         help="Number of training examples",
-        choices=[15_000, 30_000, 100_000],
+        choices=[300, 3_000, 15_000, 30_000, 100_000],
         required=True,
     )
     parser.add_argument(
@@ -240,7 +267,14 @@ if __name__ == "__main__":
     layer = args.sae_layer
     rank = args.rank
     # percents = [args.checkpoint_percent] if args.checkpoint_percent else range(10, 101, 10)
-    trainer_ids = [args.trainer_id] if args.trainer_id else range(0, 6)
+    trainer_ids = [args.trainer_id] if args.trainer_id else range(1, 4)
+
+    if args.LoRA_layers == "sae_lora":
+        training_type = TrainingType.SAE_LORA
+    elif args.LoRA_layers == "sae_full_finetune":
+        training_type = TrainingType.SAE_FULL_FINETUNE
+    else:
+        training_type = TrainingType.LORA
 
     # dataset_name = "togethercomputer/RedPajama-Data-V2"
     dataset_name = "monology/pile-uncopyrighted"
@@ -257,6 +291,8 @@ if __name__ == "__main__":
             else [layer + 1]
             if args.LoRA_layers == "single"
             else list(range(layer + 1, 26))
+            if args.LoRA_layers == "after"
+            else []
         )
         dtype = torch.bfloat16
         use_16_bit = True
@@ -273,6 +309,8 @@ if __name__ == "__main__":
             else [layer + 1]
             if args.LoRA_layers == "single"
             else list(range(layer + 1, 12))
+            if args.LoRA_layers == "after"
+            else []
         )
         dtype = torch.float32
         use_16_bit = False
@@ -284,6 +322,8 @@ if __name__ == "__main__":
             "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
         )
         LoRA_layers = list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
+
+    args.batch_size *= 2
 
     for trainer_id in trainer_ids:
         sae_path = sae_path_template.format(trainer_id=trainer_id, layer=layer)
@@ -306,4 +346,5 @@ if __name__ == "__main__":
             save_model_file=args.save_model,
             dtype=dtype,
             use_16_bit=use_16_bit,
+            training_type=training_type,
         )
