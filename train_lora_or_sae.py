@@ -158,6 +158,8 @@ def main(
         )
         sae_module = get_peft_model(sae_module, lora_config)
         sae_module.print_trainable_parameters()
+    elif training_type == TrainingType.SAE_FULL_FINETUNE:
+        sae_module = sae_module.to(dtype=torch.float32)
 
     print("BASE MODEL LOSS")
     base_loss = evaluate(model, val_dataset)
