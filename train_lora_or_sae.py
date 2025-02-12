@@ -219,8 +219,8 @@ def main(
 
 
 if __name__ == "__main__":
-    """python train_lora_or_sae.py --device 0 --model_type "pythia" --sae_layer 8 --rank 64 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers after
-    python train_lora_or_sae.py --device 0 --model_type "gemma" --sae_layer 12 --rank 64 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers after
+    """python train_lora_or_sae.py --device 0 --model_type "pythia" --sae_layer 8 --rank 16 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers sae_lora
+    python train_lora_or_sae.py --device 0 --model_type "gemma" --sae_layer 12 --rank 16 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers sae_lora
     """
     # Run Experiment Args
     parser = argparse.ArgumentParser(description="Arguments related to running experiment")
@@ -296,7 +296,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 1
+        args.batch_size = 2
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
@@ -335,7 +335,7 @@ if __name__ == "__main__":
             sae_from_hf=False,
             dataset=dataset_name,
             experiment_name=f"{args.model_type}_LoRA",
-            run_name=f"layer_{layer}_rank_{rank}",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",

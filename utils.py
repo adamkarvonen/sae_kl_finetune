@@ -592,8 +592,8 @@ def evaluate(
                 total_examples += batch_size
 
                 # Cleanup
-                del val_inputs, val_targets, val_outputs
-                torch.cuda.empty_cache()
+                # del val_inputs, val_targets, val_outputs
+                # torch.cuda.empty_cache()
 
                 val_loop.set_description_str(f"Validation Loss: {val_loss / total_examples:.4f}")
         finally:
@@ -646,9 +646,9 @@ def train_model(
             )
 
         if sae_only:
-            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
+            optimizer = optim.AdamW(sae.parameters(), lr=3e-4)
         else:
-            optimizer = optim.AdamW(peft_model.parameters(), lr=5e-5)
+            optimizer = optim.AdamW(peft_model.parameters(), lr=3e-4)
             peft_model.train()
 
         total_loss = 0
@@ -688,9 +688,19 @@ def train_model(
                 peft_log_probs = torch.nn.functional.log_softmax(peft_logits, dim=-1)
 
                 # Calculate KL divergence loss
-                loss = torch.nn.functional.kl_div(
+                kl_loss = torch.nn.functional.kl_div(
                     peft_log_probs, base_probs, reduction="batchmean", log_target=False
                 )
+
+                if sae_only:
+                    mse_loss = GlobalSAE.reconstruction_loss
+
+                    alpha_kl = (mse_loss / kl_loss + 1e-8).detach()
+
+                    # Reconstruction loss matches original mse loss scale so an optional sparsity penalty stays relevant
+                    loss = (kl_loss * alpha_kl + mse_loss) * 0.5
+                else:
+                    loss = kl_loss
 
                 loss.backward()
 
@@ -715,7 +725,7 @@ def train_model(
                     peft_log_probs,
                     loss,
                 )
-                torch.cuda.empty_cache()
+                # torch.cuda.empty_cache()
 
                 training_time_between_evals += time.time() - train_step_start
                 train_loop.update(batch_size)
@@ -786,6 +796,8 @@ def train_model(
 class GlobalSAE:
     current_batch = None
     use_sae = True
+    reconstruction_loss = None
+    # sparsity_loss = None # Not needed for TopK
 
 
 def get_sae_hook(sae_module, tokenizer, sae_from_hf=False):
@@ -796,9 +808,10 @@ def get_sae_hook(sae_module, tokenizer, sae_from_hf=False):
         original_shape = output[0].shape
         output_tensor = output[0]
 
-        original_outputs = output[0]
+        # original_outputs = output[0]
 
         if sae_from_hf:
+            raise ValueError
             token_is_eos_or_bos = (GlobalSAE.current_batch == tokenizer.eos_token_id) | (
                 GlobalSAE.current_batch == tokenizer.bos_token_id
             )
@@ -820,6 +833,9 @@ def get_sae_hook(sae_module, tokenizer, sae_from_hf=False):
             flat_output = output_tensor.reshape(-1, original_shape[-1])
             reconstructed_output = sae_module(flat_output).to(dtype=flat_output.dtype)
             reconstructed_output = reconstructed_output.reshape(original_shape)
+
+        mse = torch.nn.functional.mse_loss(reconstructed_output, output_tensor)
+        GlobalSAE.reconstruction_loss = mse
 
         return (reconstructed_output,) + output[1:]
 
