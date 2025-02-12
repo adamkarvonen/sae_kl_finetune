@@ -219,8 +219,10 @@ def fast_hf_dataset_to_generator(
     is_redpajama = dataset_name == "togethercomputer/RedPajama-Data-V2"
     is_pile = dataset_name == "monology/pile-uncopyrighted"
     text_key = "raw_content" if is_redpajama else "text"
+    tokens_dir = "tokens"
 
     cache_file = f"{dataset_name.replace('/', '_')}_cache_{total_tokens}_tokens.pkl"
+    cache_file = os.path.join(tokens_dir, cache_file)
     if os.path.exists(cache_file):
         print(f"Loading cached dataset from {cache_file}")
         with open(cache_file, "rb") as f:
@@ -270,6 +272,7 @@ def fast_hf_dataset_to_generator(
 
     filename_id = f"{dataset_name}_{model_name}_{total_tokens}_tokens"
     cached_tokens_file = f"{filename_id}_tokens.pkl".replace("/", "_")
+    cached_tokens_file = os.path.join(tokens_dir, cached_tokens_file)
 
     if not os.path.exists(cached_tokens_file):
         tokenized = chunk_and_tokenize(
