@@ -192,6 +192,9 @@ def main(
 
 
 if __name__ == "__main__":
+    """python train_lora_or_sae.py --device 0 --model_type "pythia" --sae_layer 8 --rank 64 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers after
+    python train_lora_or_sae.py --device 0 --model_type "gemma" --sae_layer 12 --rank 64 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers after
+    """
     # Run Experiment Args
     parser = argparse.ArgumentParser(description="Arguments related to running experiment")
     parser.add_argument("--device", type=int, required=True, help="CUDA device index")

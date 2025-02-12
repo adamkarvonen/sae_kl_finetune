@@ -221,6 +221,8 @@ def fast_hf_dataset_to_generator(
     text_key = "raw_content" if is_redpajama else "text"
     tokens_dir = "tokens"
 
+    os.makedirs(tokens_dir, exist_ok=True)
+
     cache_file = f"{dataset_name.replace('/', '_')}_cache_{total_tokens}_tokens.pkl"
     cache_file = os.path.join(tokens_dir, cache_file)
     if os.path.exists(cache_file):
