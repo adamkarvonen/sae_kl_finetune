@@ -7,3 +7,4 @@ data
 wandb
 saved_models
 *.pkl
+*.venv
