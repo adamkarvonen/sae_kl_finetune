@@ -67,11 +67,6 @@ def main(
     device = torch.device(device_name)
     torch.cuda.set_device(device)
 
-    sae_only = False
-
-    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
-        sae_only = True
-
     # initialize_auth()
 
     print("Loading tokenizer")
@@ -189,7 +184,7 @@ def main(
         initial_loss=initial_loss,
         base_loss=base_loss,
         track_evals=track_evals,
-        sae_only=sae_only,
+        training_type=training_type,
     )
     converged_loss = val_losses[-1]
 

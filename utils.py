@@ -611,14 +611,19 @@ def train_model(
     rank: int,
     project_name: str,
     run_name: str,
+    training_type: TrainingType,
     initial_loss: Optional[float] = None,
     base_loss: Optional[float] = None,
     track_evals: bool = True,
-    sae_only: bool = False,
 ) -> Tuple[List[float], List[float]]:
     """Train the model using KL divergence loss"""
     print("Training model with KL divergence loss")
     device = peft_model.device
+
+    sae_only = False
+
+    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+        sae_only = True
 
     args_config = {
         attr: getattr(args, attr)
@@ -645,7 +650,10 @@ def train_model(
                 }
             )
 
-        if sae_only:
+        if training_type == TrainingType.SAE_FULL_FINETUNE:
+            # Lower LR for full fine tune
+            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
+        elif training_type == TrainingType.SAE_LORA:
             optimizer = optim.AdamW(sae.parameters(), lr=3e-4)
         else:
             optimizer = optim.AdamW(peft_model.parameters(), lr=3e-4)
