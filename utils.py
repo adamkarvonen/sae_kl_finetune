@@ -537,7 +537,9 @@ def save_model(peft_model, rank, **kwargs) -> None:
 
     model_name = model_name.split("/")[-1]
 
-    if training_type == TrainingType.SAE_LORA or training_type == TrainingType.SAE_FULL_FINETUNE:
+    if training_type == TrainingType.SAE_FULL_FINETUNE:
+        raise ValueError("This is only for loras")
+    elif training_type == TrainingType.SAE_LORA:
         peft_range = training_type.value
     else:
         peft_range = (
@@ -550,7 +552,43 @@ def save_model(peft_model, rank, **kwargs) -> None:
     os.makedirs(save_dir, exist_ok=True)
 
     model_path = os.path.join(save_dir, f"rank_{rank}")
+    os.makedirs(model_path, exist_ok=True)
     peft_model.save_pretrained(model_path)
+    print(f"Saved model to {model_path}")
+
+
+def save_sae(sae, rank, **kwargs) -> None:
+    sae_path = kwargs["sae_path"]
+    model_name = kwargs["model_name"]
+    peft_layers = kwargs["peft_layers"]
+    peft_type = kwargs["peft_type"]
+    sae_from_hf = kwargs["sae_from_hf"]
+    training_type = kwargs["training_type"]
+
+    if sae_path:
+        if not sae_from_hf:
+            sae_path = sae_path.split("/")[-2]
+        else:
+            parts = sae_path.split("/", 1)
+            sae_path = f"{parts[1].replace('/', '_')}"
+
+    model_name = model_name.split("/")[-1]
+
+    if training_type == TrainingType.SAE_LORA or training_type == TrainingType.SAE_FULL_FINETUNE:
+        peft_range = training_type.value
+    else:
+        raise ValueError("This is only for saving SAEs")
+
+    base_path = f"saved_models/{model_name}"
+    base_path = f"{base_path}/{sae_path}" if sae_path else f"{base_path}/base"
+    save_dir = f"{base_path}/peft_{peft_range}"
+    os.makedirs(save_dir, exist_ok=True)
+
+    model_path = os.path.join(save_dir, f"rank_{rank}")
+    os.makedirs(model_path, exist_ok=True)
+
+    final = {k: v.cpu() for k, v in sae.state_dict().items()}
+    torch.save(final, os.path.join(model_path, "ae.pt"))
     print(f"Saved model to {model_path}")
 
 

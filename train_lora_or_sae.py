@@ -207,7 +207,11 @@ def main(
 
     save_data(CE_increase, val_losses_dict, total_training_minutes_dict, **kwargs)
 
-    if save_model_file:
+    if not save_model_file:
+        print()
+    elif training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+        utils.save_sae(sae_module, peft_rank, **kwargs)
+    else:
         save_model(peft_model, peft_rank, **kwargs)
 
     del peft_model, model, tokenizer
@@ -243,7 +247,7 @@ if __name__ == "__main__":
         "--num_train_examples",
         type=int,
         help="Number of training examples",
-        choices=[300, 3_000, 15_000, 30_000, 100_000],
+        choices=[30, 150, 300, 3_000, 15_000, 30_000, 100_000],
         required=True,
     )
     parser.add_argument(
@@ -293,7 +297,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 2
+        args.batch_size = 1
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
