@@ -193,6 +193,7 @@ def main(
         hook_handle.remove()
 
     CE_increase = {
+        "base": base_loss,
         "initial": initial_loss,
         "converged": converged_loss,
         "difference": initial_loss - converged_loss,
