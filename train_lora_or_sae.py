@@ -9,7 +9,6 @@ from inspect import signature
 import os
 from utils import get_sae_hook
 from dictionary_learning import topk_sae
-from contextlib import nullcontext
 
 import torch
 from peft import get_peft_model, LoraConfig, TaskType
@@ -162,44 +161,36 @@ def main(
     elif training_type == TrainingType.SAE_FULL_FINETUNE:
         sae_module = sae_module.to(dtype=torch.float32)
 
-    device_type = "cuda" if "cuda" in device_name else "cpu"
-    autocast_context = (
-        nullcontext()
-        if device_type == "cpu"
-        else torch.autocast(device_type=device_type, dtype=torch.bfloat16)
-    )
+    print("BASE MODEL LOSS")
+    base_loss = evaluate(model, val_dataset)
+    # base_loss = 0
+    print(f"Base loss: {base_loss:.4f}")
 
-    with autocast_context:
-        print("BASE MODEL LOSS")
-        base_loss = evaluate(model, val_dataset)
-        # base_loss = 0
-        print(f"Base loss: {base_loss:.4f}")
-
-        hook_handle = None
-        if sae_path:
-            print(f"Registering SAE hook (rank {peft_rank})")
-            hook_handle = peft_model_layers[sae_layer].register_forward_hook(
-                get_sae_hook(sae_module, tokenizer, sae_from_hf)
-            )
-
-        print("INITIAL PEFT MODEL LOSS")
-        initial_loss = evaluate(peft_model, val_dataset)
-        print(f"Initial loss: {initial_loss:.4f}")
-
-        val_losses, total_training_minutes = train_model(
-            peft_model=peft_model,
-            sae=sae_module,
-            train_gen=train_gen,
-            val_dataset=val_dataset,
-            args=args,
-            rank=peft_rank,
-            project_name=experiment_name,
-            run_name=run_name,
-            initial_loss=initial_loss,
-            base_loss=base_loss,
-            track_evals=track_evals,
-            sae_only=sae_only,
+    hook_handle = None
+    if sae_path:
+        print(f"Registering SAE hook (rank {peft_rank})")
+        hook_handle = peft_model_layers[sae_layer].register_forward_hook(
+            get_sae_hook(sae_module, tokenizer, sae_from_hf)
         )
+
+    print("INITIAL PEFT MODEL LOSS")
+    initial_loss = evaluate(peft_model, val_dataset)
+    print(f"Initial loss: {initial_loss:.4f}")
+
+    val_losses, total_training_minutes = train_model(
+        peft_model=peft_model,
+        sae=sae_module,
+        train_gen=train_gen,
+        val_dataset=val_dataset,
+        args=args,
+        rank=peft_rank,
+        project_name=experiment_name,
+        run_name=run_name,
+        initial_loss=initial_loss,
+        base_loss=base_loss,
+        track_evals=track_evals,
+        sae_only=sae_only,
+    )
     converged_loss = val_losses[-1]
 
     if hook_handle:
