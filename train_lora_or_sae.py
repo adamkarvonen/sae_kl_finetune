@@ -299,7 +299,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 1
+        args.batch_size = 2
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
@@ -326,7 +326,8 @@ if __name__ == "__main__":
         )
         LoRA_layers = list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
 
-    args.batch_size *= 2
+    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+        args.batch_size *= 2
 
     for trainer_id in trainer_ids:
         sae_path = sae_path_template.format(trainer_id=trainer_id, layer=layer)
