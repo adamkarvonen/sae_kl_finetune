@@ -61,6 +61,7 @@ def main(
     dtype=torch.bfloat16,
     use_16_bit: bool = True,
 ):
+    torch.manual_seed(0)
     kwargs = {key: value for key, value in locals().items() if key in signature(main).parameters}
 
     device_name = f"cuda:{device}" if torch.cuda.is_available() else "cpu"

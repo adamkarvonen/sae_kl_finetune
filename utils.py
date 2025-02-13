@@ -689,12 +689,12 @@ def train_model(
             )
 
         if training_type == TrainingType.SAE_FULL_FINETUNE:
-            # Lower LR for full fine tune
+            # Optional lower LR for full fine tune
             optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
         elif training_type == TrainingType.SAE_LORA:
-            optimizer = optim.AdamW(sae.parameters(), lr=3e-4)
+            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
         else:
-            optimizer = optim.AdamW(peft_model.parameters(), lr=3e-4)
+            optimizer = optim.AdamW(peft_model.parameters(), lr=5e-5)
             peft_model.train()
 
         total_loss = 0
