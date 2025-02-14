@@ -5,6 +5,7 @@ from typing import Generator, List, Tuple, Optional, Any, Dict
 import time
 import pickle
 from enum import Enum
+import einops
 
 import json
 import torch
@@ -19,6 +20,7 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 
 from eleuther_sae.sae.data import chunk_and_tokenize
+import dictionary_learning.topk_sae as topk_sae
 
 
 ########################################
@@ -642,7 +644,7 @@ def evaluate(
 
 def train_model(
     peft_model: PreTrainedModel,
-    sae,
+    sae: topk_sae.TopKSAE,
     train_gen: Generator[str, None, None],
     val_dataset: List[torch.Tensor],
     args: Any,
@@ -685,7 +687,8 @@ def train_model(
                     "base_loss": base_loss,
                     "total_training_minutes": 0,
                     "training_minutes_between_evals": 0,
-                }
+                },
+                step=total_examples,
             )
 
         if training_type == TrainingType.SAE_FULL_FINETUNE:
@@ -741,20 +744,38 @@ def train_model(
                 if sae_only:
                     mse_loss = GlobalSAE.reconstruction_loss
 
-                    alpha_kl = (mse_loss / kl_loss + 1e-8).detach()
+                    alpha_kl = (mse_loss / (kl_loss + 1e-8)).detach()
 
                     # Reconstruction loss matches original mse loss scale so an optional sparsity penalty stays relevant
                     loss = (kl_loss * alpha_kl + mse_loss) * 0.5
+                    loss.backward()
+                    if training_type == TrainingType.SAE_FULL_FINETUNE:
+                        sae.decoder.weight.grad = remove_gradient_parallel_to_decoder_directions(
+                            sae.decoder.weight,
+                            sae.decoder.weight.grad,
+                            sae.d_in,
+                            sae.d_sae,
+                        )
+                    torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
+                    optimizer.step()
+                    # clip grad norm and remove grads parallel to decoder directions
+
+                    if training_type == TrainingType.SAE_FULL_FINETUNE:
+                        # Make sure the decoder is still unit-norm
+                        sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
+                            sae.decoder.weight, sae.d_in, sae.d_sae
+                        )
+
+                    if examples_since_last_eval % args.log_steps == 0:
+                        wandb.log(
+                            {"mse_loss": mse_loss, "kl_loss": kl_loss, "alpha_kl": alpha_kl},
+                            step=total_examples,
+                        )
                 else:
                     loss = kl_loss
-
-                loss.backward()
-
-                if sae_only:
-                    torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
-                else:
+                    loss.backward()
                     torch.nn.utils.clip_grad_norm_(peft_model.parameters(), max_norm=1.0)
-                optimizer.step()
+                    optimizer.step()
 
                 total_loss += loss.item() * batch_size
                 total_examples += batch_size
@@ -793,7 +814,8 @@ def train_model(
                             "val_loss": val_loss,
                             "training_minutes_between_evals": training_time_between_evals / 60,
                             "total_training_minutes": total_training_minutes,
-                        }
+                        },
+                        step=total_examples,
                     )
 
                     print(
@@ -827,7 +849,8 @@ def train_model(
                     "val_loss": val_loss,
                     "training_minutes_between_evals": training_time_between_evals / 60,
                     "total_training_minutes": total_training_minutes,
-                }
+                },
+                step=total_examples,
             )
 
             print(
@@ -843,6 +866,7 @@ class GlobalSAE:
     current_batch = None
     use_sae = True
     reconstruction_loss = None
+    aux_loss = None
     # sparsity_loss = None # Not needed for TopK
 
 
@@ -886,6 +910,56 @@ def get_sae_hook(sae_module, tokenizer, sae_from_hf=False):
         return (reconstructed_output,) + output[1:]
 
     return sae_reconstruction_hook
+
+
+# The next two functions could be replaced with the ConstrainedAdam Optimizer
+@torch.no_grad()
+def set_decoder_norm_to_unit_norm(
+    W_dec_DF: torch.nn.Parameter, activation_dim: int, d_sae: int
+) -> torch.Tensor:
+    """There's a major footgun here: we use this with both nn.Linear and nn.Parameter decoders.
+    nn.Linear stores the decoder weights in a transposed format (d_model, d_sae). So, we pass the dimensions in
+    to catch this error."""
+
+    D, F = W_dec_DF.shape
+
+    assert D == activation_dim
+    assert F == d_sae
+
+    eps = torch.finfo(W_dec_DF.dtype).eps
+    norm = torch.norm(W_dec_DF.data, dim=0, keepdim=True)
+    W_dec_DF.data /= norm + eps
+    return W_dec_DF.data
+
+
+@torch.no_grad()
+def remove_gradient_parallel_to_decoder_directions(
+    W_dec_DF: torch.Tensor,
+    W_dec_DF_grad: torch.Tensor,
+    activation_dim: int,
+    d_sae: int,
+) -> torch.Tensor:
+    """There's a major footgun here: we use this with both nn.Linear and nn.Parameter decoders.
+    nn.Linear stores the decoder weights in a transposed format (d_model, d_sae). So, we pass the dimensions in
+    to catch this error."""
+
+    D, F = W_dec_DF.shape
+    assert D == activation_dim
+    assert F == d_sae
+
+    normed_W_dec_DF = W_dec_DF / (torch.norm(W_dec_DF, dim=0, keepdim=True) + 1e-6)
+
+    parallel_component = einops.einsum(
+        W_dec_DF_grad,
+        normed_W_dec_DF,
+        "d_in d_sae, d_in d_sae -> d_sae",
+    )
+    W_dec_DF_grad -= einops.einsum(
+        parallel_component,
+        normed_W_dec_DF,
+        "d_sae, d_in d_sae -> d_in d_sae",
+    )
+    return W_dec_DF_grad
 
 
 # Add more utility functions as needed...

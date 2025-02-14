@@ -8,3 +8,4 @@ wandb
 saved_models
 *.pkl
 *.venv
+*.json

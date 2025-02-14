@@ -38,6 +38,7 @@ class args:
     num_val_tokens = 1_000_000  # 1_000_000
     # num_val_tokens = 100_000  # 1_000_000
     examples_per_eval = 1000  # 1000
+    log_freq = 100
 
 
 def main(
@@ -299,7 +300,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 2
+        args.batch_size = 1
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"

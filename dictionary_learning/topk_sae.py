@@ -26,6 +26,8 @@ class TopKSAE(base_sae.BaseSAE):
         assert isinstance(k, int) and k > 0
         self.register_buffer("k", torch.tensor(k, dtype=torch.int, device=device))
 
+        self.d_sae = d_sae
+        self.d_in = d_in
         self.use_threshold = use_threshold
         if use_threshold:
             # Optional global threshold to use during inference. Must be positive.
