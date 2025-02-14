@@ -628,6 +628,49 @@ def wandb_session(project_name: str, run_name: str, config: Dict[str, Any]):
         wandb.finish()
 
 
+def evaluate_get_l0(
+    model: PreTrainedModel,
+    val_dataset: List[torch.Tensor],
+) -> tuple[float, float]:
+    """Evaluate model on validation dataset"""
+
+    device = model.device
+    model.eval()
+
+    val_loss = 0
+    total_examples = 0
+    l0 = 0
+
+    with torch.no_grad():
+        val_loop = tqdm(val_dataset, leave=True, desc="Validation")
+        try:
+            for val_batch in val_loop:
+                val_inputs = val_batch.to(device)
+                val_targets = val_inputs.clone()
+                batch_size = val_inputs.size(0)
+
+                GlobalSAE.current_batch = val_inputs.detach()
+                val_outputs = model(val_inputs, labels=val_targets)
+                val_loss += val_outputs.loss.item() * batch_size
+                total_examples += batch_size
+
+                # Cleanup
+                # del val_inputs, val_targets, val_outputs
+                # torch.cuda.empty_cache()
+
+                val_loop.set_description_str(
+                    f"Validation Loss: {val_loss / total_examples:.4f}"
+                )
+                l0 += GlobalSAE.l0
+        finally:
+            val_loop.close()
+
+    l0 /= len(val_loop)
+    val_loss /= total_examples
+
+    return val_loss, l0
+
+
 def evaluate(
     model: PreTrainedModel,
     val_dataset: List[torch.Tensor],
@@ -669,6 +712,17 @@ def evaluate(
 NORM_SCALE = None
 
 
+def update_sparsity_penalty(
+    l1_penalty: float, l0: float, target_l0: float, eps: float = 0.001
+) -> float:
+    if l0 < target_l0:
+        l1_penalty *= 1 - eps
+    else:
+        l1_penalty *= 1 + eps
+
+    return l1_penalty
+
+
 def train_model(
     peft_model: PreTrainedModel,
     sae: relu_sae.ReluSAE,
@@ -679,6 +733,7 @@ def train_model(
     project_name: str,
     run_name: str,
     training_type: TrainingType,
+    target_l0: float,
     initial_loss: Optional[float] = None,
     base_loss: Optional[float] = None,
     track_evals: bool = True,
@@ -800,7 +855,11 @@ def train_model(
                             sae.decoder.weight, sae.d_in, sae.d_sae
                         )
 
-                    if examples_since_last_eval % args.log_steps == 0:
+                    sae.l1_penalty = update_sparsity_penalty(
+                        sae.l1_penalty, GlobalSAE.l0, target_l0
+                    )
+
+                    if total_examples % args.log_steps == 0 or True:
                         wandb.log(
                             {
                                 "mse_loss": mse_loss,
@@ -809,6 +868,7 @@ def train_model(
                                 "l0": GlobalSAE.l0,
                                 "l1_loss": GlobalSAE.l1_loss,
                                 "sparsity_loss": GlobalSAE.sparsity_loss,
+                                "l1_penalty": sae.l1_penalty,
                             },
                             step=total_examples,
                         )
@@ -821,7 +881,6 @@ def train_model(
                     optimizer.step()
 
                 total_loss += loss.item() * batch_size
-                total_examples += batch_size
                 examples_since_last_eval += batch_size
 
                 # Clean up memory
@@ -842,7 +901,7 @@ def train_model(
 
                 if track_evals and examples_since_last_eval >= args.examples_per_eval:
                     avg_train_loss = total_loss / examples_since_last_eval
-                    val_loss = evaluate(peft_model, val_dataset)
+                    val_loss, val_l0 = evaluate_get_l0(peft_model, val_dataset)
 
                     total_training_minutes += training_time_between_evals / 60
 
@@ -855,6 +914,7 @@ def train_model(
                             "examples_processed": total_examples,
                             "train_loss": avg_train_loss,
                             "val_loss": val_loss,
+                            "val_l0": val_l0,
                             "training_minutes_between_evals": training_time_between_evals
                             / 60,
                             "total_training_minutes": total_training_minutes,
@@ -865,6 +925,7 @@ def train_model(
                     print(
                         f"\nExamples: {total_examples}, Train Loss: {avg_train_loss:.4f}, "
                         f"Val Loss: {val_loss:.4f}, "
+                        f"Val L0: {val_l0:.4f} "
                         f"Training Minutes Between Evals: {training_time_between_evals / 60:.2f}, "
                         f"Total Training Minutes: {total_training_minutes:.2f}"
                     )
@@ -873,6 +934,8 @@ def train_model(
                     total_loss = 0
                     examples_since_last_eval = 0
                     training_time_between_evals = 0
+
+                total_examples += batch_size
 
         finally:
             train_loop.close()

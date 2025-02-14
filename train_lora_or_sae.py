@@ -38,7 +38,7 @@ class args:
     num_val_tokens = 1_000_000  # 1_000_000
     # num_val_tokens = 10_000  # 1_000_000
     examples_per_eval = 1000  # 1000
-    log_steps = 100
+    log_steps = 96
 
 
 def main(
@@ -190,8 +190,9 @@ def main(
         )
 
     print("INITIAL PEFT MODEL LOSS")
-    initial_loss = evaluate(peft_model, val_dataset)
+    initial_loss, initial_l0 = utils.evaluate_get_l0(peft_model, val_dataset)
     print(f"Initial loss: {initial_loss:.4f}")
+    print(f"Initial l0: {initial_l0}")
 
     val_losses, total_training_minutes = train_model(
         peft_model=peft_model,
@@ -206,6 +207,7 @@ def main(
         base_loss=base_loss,
         track_evals=track_evals,
         training_type=training_type,
+        target_l0=initial_l0,
     )
     converged_loss = val_losses[-1]
 
@@ -366,7 +368,7 @@ if __name__ == "__main__":
             sae_repo=sae_repo,
             sae_from_hf=False,
             dataset=dataset_name,
-            experiment_name=f"{args.model_type}_LoRA_relu",
+            experiment_name=f"{args.model_type}_LoRA_relu_targeted_l0",
             run_name=f"layer_{layer}_rank_{rank}_{training_type.value}",
             sae_layer=layer,
             peft_layers=LoRA_layers,
