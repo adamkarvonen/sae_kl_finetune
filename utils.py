@@ -21,6 +21,7 @@ from contextlib import contextmanager
 
 from eleuther_sae.sae.data import chunk_and_tokenize
 import dictionary_learning.topk_sae as topk_sae
+import dictionary_learning.relu_sae as relu_sae
 
 
 ########################################
@@ -90,7 +91,9 @@ class ModelConfigs:
             raise ValueError(f"Unsupported model: {model_name}")
 
 
-def get_target_modules(model_name: str, peft_layers: List[int], peft_type: str) -> List[str]:
+def get_target_modules(
+    model_name: str, peft_layers: List[int], peft_type: str
+) -> List[str]:
     """Get target modules for PEFT configuration"""
 
     config = ModelConfigs.get_config(model_name)
@@ -121,8 +124,12 @@ def get_target_modules(model_name: str, peft_layers: List[int], peft_type: str) 
         "mlp": get_mlp_modules,
         "pre-mlp": get_pre_mlp_modules,
         "both": lambda: get_attn_modules() + get_mlp_modules(),
-        "gate": lambda: [config.mlp_path_template.format(i, "gate_proj") for i in peft_layers],
-        "up": lambda: [config.mlp_path_template.format(i, "up_proj") for i in peft_layers],
+        "gate": lambda: [
+            config.mlp_path_template.format(i, "gate_proj") for i in peft_layers
+        ],
+        "up": lambda: [
+            config.mlp_path_template.format(i, "up_proj") for i in peft_layers
+        ],
     }
 
     if peft_type not in peft_types:
@@ -326,7 +333,9 @@ def fast_hf_dataset_to_generator(
         batch = torch.stack([subset_val_data[j]["input_ids"] for j in batch_indices])
         val_tensors.append(batch)
 
-    print(f"Created {len(val_tensors)} validation batches of size up to {args.batch_size}")
+    print(
+        f"Created {len(val_tensors)} validation batches of size up to {args.batch_size}"
+    )
     return train_gen(), val_tensors
 
 
@@ -394,7 +403,9 @@ def hf_dataset_to_generator(
         batch = torch.stack([subset_val_data[j]["input_ids"] for j in batch_indices])
         val_tensors.append(batch)
 
-    print(f"Created {len(val_tensors)} validation batches of size up to {args.batch_size}")
+    print(
+        f"Created {len(val_tensors)} validation batches of size up to {args.batch_size}"
+    )
     return train_gen(), val_tensors
 
 
@@ -432,7 +443,9 @@ def _get_data_filenames(
         peft_range = training_type.value
     else:
         peft_range = (
-            f"{peft_layers[0]}-{peft_layers[-1]}" if len(peft_layers) > 1 else peft_layers[0]
+            f"{peft_layers[0]}-{peft_layers[-1]}"
+            if len(peft_layers) > 1
+            else peft_layers[0]
         )
 
     # Build base paths
@@ -450,7 +463,10 @@ def _get_data_filenames(
 
 
 def save_data(
-    CE_increase: dict, val_losses_dict: dict, total_training_minutes_dict: dict, **kwargs
+    CE_increase: dict,
+    val_losses_dict: dict,
+    total_training_minutes_dict: dict,
+    **kwargs,
 ) -> None:
     """
     Save CE increase and validation losses data to json files.
@@ -545,7 +561,9 @@ def save_model(peft_model, rank, **kwargs) -> None:
         peft_range = training_type.value
     else:
         peft_range = (
-            f"{peft_layers[0]}-{peft_layers[-1]}" if len(peft_layers) > 1 else peft_layers[0]
+            f"{peft_layers[0]}-{peft_layers[-1]}"
+            if len(peft_layers) > 1
+            else peft_layers[0]
         )
 
     base_path = f"saved_models/{model_name}"
@@ -576,7 +594,10 @@ def save_sae(sae, rank, **kwargs) -> None:
 
     model_name = model_name.split("/")[-1]
 
-    if training_type == TrainingType.SAE_LORA or training_type == TrainingType.SAE_FULL_FINETUNE:
+    if (
+        training_type == TrainingType.SAE_LORA
+        or training_type == TrainingType.SAE_FULL_FINETUNE
+    ):
         peft_range = training_type.value
     else:
         raise ValueError("This is only for saving SAEs")
@@ -612,6 +633,7 @@ def evaluate(
     val_dataset: List[torch.Tensor],
 ) -> float:
     """Evaluate model on validation dataset"""
+
     device = model.device
     model.eval()
 
@@ -635,16 +657,21 @@ def evaluate(
                 # del val_inputs, val_targets, val_outputs
                 # torch.cuda.empty_cache()
 
-                val_loop.set_description_str(f"Validation Loss: {val_loss / total_examples:.4f}")
+                val_loop.set_description_str(
+                    f"Validation Loss: {val_loss / total_examples:.4f}"
+                )
         finally:
             val_loop.close()
 
     return val_loss / total_examples
 
 
+NORM_SCALE = None
+
+
 def train_model(
     peft_model: PreTrainedModel,
-    sae: topk_sae.TopKSAE,
+    sae: relu_sae.ReluSAE,
     train_gen: Generator[str, None, None],
     val_dataset: List[torch.Tensor],
     args: Any,
@@ -662,7 +689,10 @@ def train_model(
 
     sae_only = False
 
-    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+    if (
+        training_type == TrainingType.SAE_FULL_FINETUNE
+        or training_type == TrainingType.SAE_LORA
+    ):
         sae_only = True
 
     args_config = {
@@ -747,14 +777,18 @@ def train_model(
                     alpha_kl = (mse_loss / (kl_loss + 1e-8)).detach()
 
                     # Reconstruction loss matches original mse loss scale so an optional sparsity penalty stays relevant
-                    loss = (kl_loss * alpha_kl + mse_loss) * 0.5
+                    loss = (
+                        (kl_loss * alpha_kl + mse_loss) * 0.5
+                    ) + GlobalSAE.sparsity_loss
                     loss.backward()
                     if training_type == TrainingType.SAE_FULL_FINETUNE:
-                        sae.decoder.weight.grad = remove_gradient_parallel_to_decoder_directions(
-                            sae.decoder.weight,
-                            sae.decoder.weight.grad,
-                            sae.d_in,
-                            sae.d_sae,
+                        sae.decoder.weight.grad = (
+                            remove_gradient_parallel_to_decoder_directions(
+                                sae.decoder.weight,
+                                sae.decoder.weight.grad,
+                                sae.d_in,
+                                sae.d_sae,
+                            )
                         )
                     torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
                     optimizer.step()
@@ -768,13 +802,22 @@ def train_model(
 
                     if examples_since_last_eval % args.log_steps == 0:
                         wandb.log(
-                            {"mse_loss": mse_loss, "kl_loss": kl_loss, "alpha_kl": alpha_kl},
+                            {
+                                "mse_loss": mse_loss,
+                                "kl_loss": kl_loss,
+                                "alpha_kl": alpha_kl,
+                                "l0": GlobalSAE.l0,
+                                "l1_loss": GlobalSAE.l1_loss,
+                                "sparsity_loss": GlobalSAE.sparsity_loss,
+                            },
                             step=total_examples,
                         )
                 else:
                     loss = kl_loss
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(peft_model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(
+                        peft_model.parameters(), max_norm=1.0
+                    )
                     optimizer.step()
 
                 total_loss += loss.item() * batch_size
@@ -812,7 +855,8 @@ def train_model(
                             "examples_processed": total_examples,
                             "train_loss": avg_train_loss,
                             "val_loss": val_loss,
-                            "training_minutes_between_evals": training_time_between_evals / 60,
+                            "training_minutes_between_evals": training_time_between_evals
+                            / 60,
                             "total_training_minutes": total_training_minutes,
                         },
                         step=total_examples,
@@ -867,27 +911,42 @@ class GlobalSAE:
     use_sae = True
     reconstruction_loss = None
     aux_loss = None
-    # sparsity_loss = None # Not needed for TopK
+    sparsity_loss = None  # Not needed for TopK
+    l0 = None
+    l1_loss = None
 
 
-def get_sae_hook(sae_module, tokenizer, sae_from_hf=False):
+def get_sae_hook(sae_module: relu_sae.ReluSAE, tokenizer, sae_from_hf=False):
     def sae_reconstruction_hook(module, input, output):
         if not GlobalSAE.use_sae:
             return output
 
+        if sae_module.model_name == "EleutherAI/pythia-160m-deduped":
+            NORM_SCALE = 30.310302734375
+            assert sae_module.hook_layer == 8
+        elif sae_module.model_name == "google/gemma-2-2b":
+            NORM_SCALE = 174.0
+            assert sae_module.hook_layer == 12
+        else:
+            raise ValueError("Get norm scale for model")
+
         original_shape = output[0].shape
         output_tensor = output[0]
+
+        output_tensor /= NORM_SCALE
 
         # original_outputs = output[0]
 
         if sae_from_hf:
             raise ValueError
-            token_is_eos_or_bos = (GlobalSAE.current_batch == tokenizer.eos_token_id) | (
-                GlobalSAE.current_batch == tokenizer.bos_token_id
-            )
+            token_is_eos_or_bos = (
+                GlobalSAE.current_batch == tokenizer.eos_token_id
+            ) | (GlobalSAE.current_batch == tokenizer.bos_token_id)
 
             flattened_output = output_tensor.flatten(end_dim=1)
-            reconstructed_output = sae_module(flattened_output).to(dtype=flattened_output.dtype)
+            reconstructed_output = sae_module(flattened_output).to(
+                dtype=flattened_output.dtype
+            )
 
             reconstructed_output = reconstructed_output.reshape(original_shape)
 
@@ -896,16 +955,27 @@ def get_sae_hook(sae_module, tokenizer, sae_from_hf=False):
 
             # Where mask is True (non-special tokens), use reconstructed output
             # Where mask is False (special tokens), use original output
-            reconstructed_output = torch.where(token_mask, reconstructed_output, original_outputs)
+            reconstructed_output = torch.where(
+                token_mask, reconstructed_output, original_outputs
+            )
 
-        else:
-            # Process all tokens through SAE as before
-            flat_output = output_tensor.reshape(-1, original_shape[-1])
-            reconstructed_output = sae_module(flat_output).to(dtype=flat_output.dtype)
-            reconstructed_output = reconstructed_output.reshape(original_shape)
+        # Process all tokens through SAE as before
+        flat_output = output_tensor.reshape(-1, original_shape[-1])
+        f = sae_module.encode(flat_output)
+        reconstructed_output = sae_module.decode(f).to(dtype=flat_output.dtype)
+        reconstructed_output = reconstructed_output.reshape(original_shape)
 
-        mse = torch.nn.functional.mse_loss(reconstructed_output, output_tensor)
+        # mse = torch.nn.functional.mse_loss(reconstructed_output, output_tensor)
+        mse = (output_tensor - reconstructed_output).pow(2).sum(dim=-1).mean()
         GlobalSAE.reconstruction_loss = mse
+
+        GlobalSAE.l0 = (f != 0).float().sum(dim=-1).mean()
+        GlobalSAE.l1_loss = f.norm(p=1, dim=-1).mean()
+        GlobalSAE.sparsity_loss = (
+            (f * sae_module.decoder.weight.norm(p=2, dim=0)).sum(dim=-1).mean()
+        ) * sae_module.l1_penalty
+
+        reconstructed_output *= NORM_SCALE
 
         return (reconstructed_output,) + output[1:]
 

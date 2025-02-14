@@ -8,7 +8,7 @@ from typing import List
 from inspect import signature
 import os
 from utils import get_sae_hook
-from dictionary_learning import topk_sae
+from dictionary_learning import topk_sae, relu_sae
 
 import torch
 from peft import get_peft_model, LoraConfig, TaskType
@@ -63,7 +63,11 @@ def main(
     use_16_bit: bool = True,
 ):
     torch.manual_seed(0)
-    kwargs = {key: value for key, value in locals().items() if key in signature(main).parameters}
+    kwargs = {
+        key: value
+        for key, value in locals().items()
+        if key in signature(main).parameters
+    }
 
     device_name = f"cuda:{device}" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
@@ -84,10 +88,23 @@ def main(
     print(f"Loaded {model_name} model and tokenizer:")
     # print(model)
 
-    sae_module = topk_sae.load_dictionary_learning_topk_sae(
-        repo_id=sae_repo, filename=sae_path, model_name=model_name, device=device, dtype=dtype
+    sae_module = relu_sae.load_dictionary_learning_relu_sae(
+        repo_id=sae_repo,
+        filename=sae_path,
+        model_name=model_name,
+        device=device,
+        dtype=dtype,
     )
     print("sae module", sae_module)
+
+    if sae_module.model_name == "EleutherAI/pythia-160m-deduped":
+        NORM_SCALE = 30.310302734375
+    elif sae_module.model_name == "google/gemma-2-2b":
+        NORM_SCALE = 174.0
+    else:
+        raise ValueError("Get norm scale for model")
+
+    sae_module.scale_biases(1 / NORM_SCALE)
 
     model.requires_grad_(False)
 
@@ -115,7 +132,9 @@ def main(
     if os.path.exists(CE_increase_filename):
         print(f"CE_increase_filename already exists: {CE_increase_filename}")
         return
-    print(f"CE_increase_filename does not exist: {CE_increase_filename}, starting training")
+    print(
+        f"CE_increase_filename does not exist: {CE_increase_filename}, starting training"
+    )
 
     # train_gen, _ = hf_dataset_to_generator(dataset, tokenizer, args)
 
@@ -190,6 +209,8 @@ def main(
     )
     converged_loss = val_losses[-1]
 
+    sae_module.scale_biases(NORM_SCALE)
+
     if hook_handle:
         hook_handle.remove()
 
@@ -212,7 +233,10 @@ def main(
 
     if not save_model_file:
         print()
-    elif training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+    elif (
+        training_type == TrainingType.SAE_FULL_FINETUNE
+        or training_type == TrainingType.SAE_LORA
+    ):
         utils.save_sae(sae_module, peft_rank, **kwargs)
     else:
         save_model(peft_model, peft_rank, **kwargs)
@@ -227,7 +251,9 @@ if __name__ == "__main__":
     python train_lora_or_sae.py --device 0 --model_type "gemma" --sae_layer 12 --rank 16 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers sae_lora
     """
     # Run Experiment Args
-    parser = argparse.ArgumentParser(description="Arguments related to running experiment")
+    parser = argparse.ArgumentParser(
+        description="Arguments related to running experiment"
+    )
     parser.add_argument("--device", type=int, required=True, help="CUDA device index")
     parser.add_argument(
         "--model_type",
@@ -245,7 +271,9 @@ if __name__ == "__main__":
         help="Which layers to apply LoRA to",
     )
     parser.add_argument("--rank", type=int, required=True, help="LoRA rank")
-    parser.add_argument("--save_model", action="store_true", help="Whether to save the model")
+    parser.add_argument(
+        "--save_model", action="store_true", help="Whether to save the model"
+    )
     parser.add_argument(
         "--num_train_examples",
         type=int,
@@ -286,9 +314,7 @@ if __name__ == "__main__":
     if args.model_type == "gemma":
         model_name = "google/gemma-2-2b"
         sae_repo = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        sae_path_template = (
-            "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
-        )
+        sae_path_template = "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(26))
             if args.LoRA_layers == "all"
@@ -304,9 +330,7 @@ if __name__ == "__main__":
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
-        sae_path_template = (
-            "TopK_pythia-160m-deduped__0108/resid_post_layer_8/trainer_{trainer_id}/ae.pt"
-        )
+        sae_path_template = "Standard_pythia-160m-deduped__0108/resid_post_layer_8/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(12))
             if args.LoRA_layers == "all"
@@ -322,12 +346,15 @@ if __name__ == "__main__":
     elif args.model_type == "llama":
         raise ValueError
         model_name = "meta-llama/Llama-3.2-1B"
-        sae_path_template = (
-            "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
+        sae_path_template = "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
+        LoRA_layers = (
+            list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
         )
-        LoRA_layers = list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
 
-    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+    if (
+        training_type == TrainingType.SAE_FULL_FINETUNE
+        or training_type == TrainingType.SAE_LORA
+    ):
         args.batch_size *= 2
 
     for trainer_id in trainer_ids:
@@ -339,7 +366,7 @@ if __name__ == "__main__":
             sae_repo=sae_repo,
             sae_from_hf=False,
             dataset=dataset_name,
-            experiment_name=f"{args.model_type}_LoRA",
+            experiment_name=f"{args.model_type}_LoRA_relu",
             run_name=f"layer_{layer}_rank_{rank}_{training_type.value}",
             sae_layer=layer,
             peft_layers=LoRA_layers,

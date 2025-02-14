@@ -8,7 +8,7 @@ def run_command(cmd):
 
 
 # Base command template
-base_cmd = "python train_lora_or_sae.py --device 0 --model_type gemma --sae_layer 12 --num_train_examples 15000 --save_model"
+base_cmd = "python train_lora_or_sae.py --device 0 --model_type pythia --sae_layer 8 --num_train_examples 15000 --save_model"
 
 # Run the single SAE full finetune with rank 1
 # cmd = f"{base_cmd} --rank 16 --LoRA_layers sae_full_finetune"
@@ -23,10 +23,23 @@ base_cmd = "python train_lora_or_sae.py --device 0 --model_type gemma --sae_laye
 #     cmd = f"{base_cmd} --rank {rank} --LoRA_layers {layer_type}"
 #     run_command(cmd)
 
-trainer_ids = [0, 1, 2, 3, 4]
+trainer_ids = [5, 4, 3, 2, 1]
+# ranks = [16, 64]
+
+# 174.0
 
 for trainer_id in trainer_ids:
-    cmd = f"{base_cmd} --rank 16 --LoRA_layers sae_full_finetune --trainer_id {trainer_id}"
+    cmd = (
+        f"{base_cmd} --rank 1 --LoRA_layers sae_full_finetune --trainer_id {trainer_id}"
+    )
     run_command(cmd)
+
+
+# lora_layers = ["all", "after"]
+# for trainer_id, rank, layer_type in itertools.product(trainer_ids, ranks, lora_layers):
+#     cmd = (
+#         f"{base_cmd} --rank {rank} --LoRA_layers {layer_type} --trainer_id {trainer_id}"
+#     )
+#     run_command(cmd)
 
 print("\nAll training runs completed!")
