@@ -271,7 +271,7 @@ if __name__ == "__main__":
     layer = args.sae_layer
     rank = args.rank
     # percents = [args.checkpoint_percent] if args.checkpoint_percent else range(10, 101, 10)
-    trainer_ids = [args.trainer_id] if args.trainer_id else range(1, 4)
+    trainer_ids = [args.trainer_id] if args.trainer_id is not None else range(1, 4)
 
     if args.LoRA_layers == "sae_lora":
         training_type = TrainingType.SAE_LORA
