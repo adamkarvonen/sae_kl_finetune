@@ -36,9 +36,9 @@ class args:
     batch_size = 1
     ctx_len = 1024
     num_val_tokens = 1_000_000  # 1_000_000
-    # num_val_tokens = 100_000  # 1_000_000
+    # num_val_tokens = 10_000  # 1_000_000
     examples_per_eval = 1000  # 1000
-    log_freq = 100
+    log_steps = 100
 
 
 def main(
