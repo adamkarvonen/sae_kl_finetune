@@ -812,6 +812,11 @@ def train_model(
                             )
                         )
                     torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
+                    if adapter is not None:
+                        torch.nn.utils.clip_grad_norm_(
+                            adapter.parameters(), max_norm=1.0
+                        )
+
                     optimizer.step()
                     # clip grad norm and remove grads parallel to decoder directions
 
@@ -833,7 +838,6 @@ def train_model(
                     optimizer.step()
 
                 total_loss += loss.item() * batch_size
-                total_examples += batch_size
                 examples_since_last_eval += batch_size
 
                 # Clean up memory
@@ -885,6 +889,7 @@ def train_model(
                     total_loss = 0
                     examples_since_last_eval = 0
                     training_time_between_evals = 0
+                total_examples += batch_size
 
         finally:
             train_loop.close()
@@ -981,37 +986,13 @@ def get_sae_and_adapter_hook(sae_module, linear_adapter, tokenizer, sae_from_hf=
         original_shape = output[0].shape
         output_tensor = output[0]
 
-        # original_outputs = output[0]
-
-        if sae_from_hf:
-            raise ValueError
-            token_is_eos_or_bos = (
-                GlobalSAE.current_batch == tokenizer.eos_token_id
-            ) | (GlobalSAE.current_batch == tokenizer.bos_token_id)
-
-            flattened_output = output_tensor.flatten(end_dim=1)
-            reconstructed_output = sae_module(flattened_output).to(
-                dtype=flattened_output.dtype
-            )
-
-            reconstructed_output = reconstructed_output.reshape(original_shape)
-
-            # Create mask for non-special tokens
-            token_mask = ~token_is_eos_or_bos.unsqueeze(-1)
-
-            # Where mask is True (non-special tokens), use reconstructed output
-            # Where mask is False (special tokens), use original output
-            reconstructed_output = torch.where(
-                token_mask, reconstructed_output, original_outputs
-            )
-
         # Process all tokens through SAE as before
         flat_output = output_tensor.reshape(-1, original_shape[-1])
         reconstructed_output = sae_module(flat_output).to(dtype=flat_output.dtype)
         reconstructed_output = reconstructed_output.reshape(original_shape)
 
         mse = torch.nn.functional.mse_loss(reconstructed_output, output_tensor)
-        GlobalSAE.reconstruction_loss_before_adapter = mse
+        GlobalSAE.reconstruction_loss_before_adapter = mse.item()
 
         adapted_output = linear_adapter(reconstructed_output)
         reconstructed_output = reconstructed_output + adapted_output

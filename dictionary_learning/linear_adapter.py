@@ -14,4 +14,10 @@ class LinearAdapter(nn.Module):
         nn.init.zeros_(self.up_proj.weight)
 
     def forward(self, x):
-        return self.up_proj(self.down_proj(x))
+        orig_dtype = x.dtype
+        x_fp32 = x.to(dtype=self.down_proj.weight.dtype)
+
+        adapter_out = self.up_proj(self.down_proj(x_fp32))
+
+        adapter_out = adapter_out.to(orig_dtype)
+        return adapter_out
