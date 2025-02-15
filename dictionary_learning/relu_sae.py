@@ -25,6 +25,7 @@ class ReluSAE(base_sae.BaseSAE):
         self.d_in = d_in
         self.d_sae = d_sae
         self.hook_layer = hook_layer
+        self.norm_scale = None
 
     def encode(self, x: torch.Tensor):
         acts = nn.functional.relu(self.encoder(x - self.b_dec))
@@ -38,6 +39,7 @@ class ReluSAE(base_sae.BaseSAE):
         recon = self.decode(x)
         return recon
 
+    @torch.no_grad()
     def scale_biases(self, scale: float):
         self.encoder.bias.data *= scale
         self.b_dec.data *= scale

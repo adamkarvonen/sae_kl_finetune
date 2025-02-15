@@ -671,10 +671,10 @@ def evaluate_get_l0(
     return val_loss, l0
 
 
-def evaluate(
+def evaluate_get_norm(
     model: PreTrainedModel,
     val_dataset: List[torch.Tensor],
-) -> float:
+) -> tuple[float, float]:
     """Evaluate model on validation dataset"""
 
     device = model.device
@@ -682,6 +682,8 @@ def evaluate(
 
     val_loss = 0
     total_examples = 0
+
+    avg_norm = 0
 
     with torch.no_grad():
         val_loop = tqdm(val_dataset, leave=True, desc="Validation")
@@ -691,10 +693,11 @@ def evaluate(
                 val_targets = val_inputs.clone()
                 batch_size = val_inputs.size(0)
 
-                GlobalSAE.current_batch = val_inputs.detach()
                 val_outputs = model(val_inputs, labels=val_targets)
                 val_loss += val_outputs.loss.item() * batch_size
                 total_examples += batch_size
+
+                avg_norm += GlobalNorm.norm
 
                 # Cleanup
                 # del val_inputs, val_targets, val_outputs
@@ -706,7 +709,10 @@ def evaluate(
         finally:
             val_loop.close()
 
-    return val_loss / total_examples
+    avg_norm /= len(val_loop)
+    val_loss /= total_examples
+
+    return val_loss, avg_norm
 
 
 NORM_SCALE = None
@@ -769,6 +775,7 @@ def train_model(
                 {
                     "examples_processed": 0,
                     "val_loss": initial_loss,
+                    "val_l0": target_l0,
                     "base_loss": base_loss,
                     "total_training_minutes": 0,
                     "training_minutes_between_evals": 0,
@@ -836,24 +843,23 @@ def train_model(
                         (kl_loss * alpha_kl + mse_loss) * 0.5
                     ) + GlobalSAE.sparsity_loss
                     loss.backward()
-                    if training_type == TrainingType.SAE_FULL_FINETUNE:
-                        sae.decoder.weight.grad = (
-                            remove_gradient_parallel_to_decoder_directions(
-                                sae.decoder.weight,
-                                sae.decoder.weight.grad,
-                                sae.d_in,
-                                sae.d_sae,
-                            )
-                        )
+                    # if training_type == TrainingType.SAE_FULL_FINETUNE:
+                    #     sae.decoder.weight.grad = (
+                    #         remove_gradient_parallel_to_decoder_directions(
+                    #             sae.decoder.weight,
+                    #             sae.decoder.weight.grad,
+                    #             sae.d_in,
+                    #             sae.d_sae,
+                    #         )
+                    #     )
                     torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
                     optimizer.step()
-                    # clip grad norm and remove grads parallel to decoder directions
 
-                    if training_type == TrainingType.SAE_FULL_FINETUNE:
-                        # Make sure the decoder is still unit-norm
-                        sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
-                            sae.decoder.weight, sae.d_in, sae.d_sae
-                        )
+                    # if training_type == TrainingType.SAE_FULL_FINETUNE:
+                    #     # Make sure the decoder is still unit-norm
+                    #     sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
+                    #         sae.decoder.weight, sae.d_in, sae.d_sae
+                    #     )
 
                     sae.l1_penalty = update_sparsity_penalty(
                         sae.l1_penalty, GlobalSAE.l0, target_l0
@@ -942,7 +948,7 @@ def train_model(
 
         # Final evaluation
         if not track_evals:
-            val_loss = evaluate(peft_model, val_dataset)
+            val_loss, l0 = evaluate_get_l0(peft_model, val_dataset)
             total_training_minutes += training_time_between_evals / 60
 
             train_losses.append(total_loss / total_examples)
@@ -979,19 +985,33 @@ class GlobalSAE:
     l1_loss = None
 
 
+class GlobalNorm:
+    norm = None
+
+
+def get_norm_calculation_hook():
+    def norm_hook(module, input, output):
+        if not GlobalSAE.use_sae:
+            return output
+
+        original_shape = output[0].shape
+        output_tensor = output[0]
+
+        # Process all tokens through SAE as before
+        act_BD = output_tensor.reshape(-1, original_shape[-1])
+        GlobalNorm.norm = torch.mean(torch.sum(act_BD**2, dim=1))
+
+        return output
+
+    return norm_hook
+
+
 def get_sae_hook(sae_module: relu_sae.ReluSAE, tokenizer, sae_from_hf=False):
     def sae_reconstruction_hook(module, input, output):
         if not GlobalSAE.use_sae:
             return output
 
-        if sae_module.model_name == "EleutherAI/pythia-160m-deduped":
-            NORM_SCALE = 30.310302734375
-            assert sae_module.hook_layer == 8
-        elif sae_module.model_name == "google/gemma-2-2b":
-            NORM_SCALE = 174.0
-            assert sae_module.hook_layer == 12
-        else:
-            raise ValueError("Get norm scale for model")
+        NORM_SCALE = sae_module.norm_scale
 
         original_shape = output[0].shape
         output_tensor = output[0]

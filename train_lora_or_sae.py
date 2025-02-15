@@ -25,7 +25,6 @@ from utils import (
     load_data,
     save_model,
     train_model,
-    evaluate,
     _get_data_filenames,
     TrainingType,
 )
@@ -96,15 +95,6 @@ def main(
         dtype=dtype,
     )
     print("sae module", sae_module)
-
-    if sae_module.model_name == "EleutherAI/pythia-160m-deduped":
-        NORM_SCALE = 30.310302734375
-    elif sae_module.model_name == "google/gemma-2-2b":
-        NORM_SCALE = 174.0
-    else:
-        raise ValueError("Get norm scale for model")
-
-    sae_module.scale_biases(1 / NORM_SCALE)
 
     model.requires_grad_(False)
 
@@ -178,9 +168,22 @@ def main(
         sae_module = sae_module.to(dtype=torch.float32)
 
     print("BASE MODEL LOSS")
-    base_loss = evaluate(model, val_dataset)
+    hook_handle = peft_model_layers[sae_layer].register_forward_hook(
+        utils.get_norm_calculation_hook()
+    )
+    base_loss, norm = utils.evaluate_get_norm(model, val_dataset)
     # base_loss = 0
     print(f"Base loss: {base_loss:.4f}")
+
+    print(f"norm: {norm}")
+
+    NORM_SCALE = torch.sqrt(norm).item()
+    print(f"norm scale: {NORM_SCALE}")
+    sae_module.scale_biases(1 / NORM_SCALE)
+    sae_module.norm_scale = NORM_SCALE
+
+    if hook_handle:
+        hook_handle.remove()
 
     hook_handle = None
     if sae_path:
