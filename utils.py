@@ -832,17 +832,31 @@ def train_model(
                 kl_loss = torch.nn.functional.kl_div(
                     peft_log_probs, base_probs, reduction="batchmean", log_target=False
                 )
+                mse_loss = GlobalSAE.reconstruction_loss
+
+                alpha_kl = (mse_loss / (kl_loss + 1e-8)).detach()
+
+                wandb.log(
+                    {
+                        "mse_loss": mse_loss,
+                        "kl_loss": kl_loss,
+                        "alpha_kl": alpha_kl,
+                        "l0": GlobalSAE.l0,
+                        "l1_loss": GlobalSAE.l1_loss,
+                        "sparsity_loss": GlobalSAE.sparsity_loss,
+                        "l1_penalty": sae.l1_penalty,
+                    },
+                    step=total_examples,
+                )
+                loss = ((kl_loss * alpha_kl + mse_loss) * 0.5) + GlobalSAE.sparsity_loss
+                loss.backward()
+                sae.l1_penalty = update_sparsity_penalty(
+                    sae.l1_penalty, GlobalSAE.l0, target_l0
+                )
 
                 if sae_only:
-                    mse_loss = GlobalSAE.reconstruction_loss
-
-                    alpha_kl = (mse_loss / (kl_loss + 1e-8)).detach()
-
                     # Reconstruction loss matches original mse loss scale so an optional sparsity penalty stays relevant
-                    loss = (
-                        (kl_loss * alpha_kl + mse_loss) * 0.5
-                    ) + GlobalSAE.sparsity_loss
-                    loss.backward()
+
                     # if training_type == TrainingType.SAE_FULL_FINETUNE:
                     #     sae.decoder.weight.grad = (
                     #         remove_gradient_parallel_to_decoder_directions(
@@ -861,26 +875,22 @@ def train_model(
                     #         sae.decoder.weight, sae.d_in, sae.d_sae
                     #     )
 
-                    sae.l1_penalty = update_sparsity_penalty(
-                        sae.l1_penalty, GlobalSAE.l0, target_l0
-                    )
-
-                    if total_examples % args.log_steps == 0 or True:
-                        wandb.log(
-                            {
-                                "mse_loss": mse_loss,
-                                "kl_loss": kl_loss,
-                                "alpha_kl": alpha_kl,
-                                "l0": GlobalSAE.l0,
-                                "l1_loss": GlobalSAE.l1_loss,
-                                "sparsity_loss": GlobalSAE.sparsity_loss,
-                                "l1_penalty": sae.l1_penalty,
-                            },
-                            step=total_examples,
-                        )
+                    # if total_examples % args.log_steps == 0 or True:
+                    #     wandb.log(
+                    #         {
+                    #             "mse_loss": mse_loss,
+                    #             "kl_loss": kl_loss,
+                    #             "alpha_kl": alpha_kl,
+                    #             "l0": GlobalSAE.l0,
+                    #             "l1_loss": GlobalSAE.l1_loss,
+                    #             "sparsity_loss": GlobalSAE.sparsity_loss,
+                    #             "l1_penalty": sae.l1_penalty,
+                    #         },
+                    #         step=total_examples,
+                    #     )
                 else:
-                    loss = kl_loss
-                    loss.backward()
+                    # loss = kl_loss
+                    # loss.backward()
                     torch.nn.utils.clip_grad_norm_(
                         peft_model.parameters(), max_norm=1.0
                     )
