@@ -6,6 +6,7 @@ import torch.nn as nn
 from transformer_lens import HookedTransformer
 
 import dictionary_learning.custom_sae_config as sae_config
+import utils
 
 
 class BaseSAE(nn.Module, ABC):
@@ -24,6 +25,11 @@ class BaseSAE(nn.Module, ABC):
         # Required parameters
         self.decoder = nn.Linear(d_sae, d_in, bias=False)
         self.encoder = nn.Linear(d_in, d_sae)
+
+        self.decoder.weight.data = utils.set_decoder_norm_to_unit_norm(
+            self.decoder.weight, d_in, d_sae
+        )
+        self.encoder.weight.data = self.decoder.weight.T.clone()
 
         self.b_dec = nn.Parameter(torch.zeros(d_in))
 
@@ -80,7 +86,9 @@ class BaseSAE(nn.Module, ABC):
 
         # In bfloat16, it's common to see errors of (1/256) in the norms
         tolerance = (
-            1e-2 if self.decoder.weight.data.T.dtype in [torch.bfloat16, torch.float16] else 1e-5
+            1e-2
+            if self.decoder.weight.data.T.dtype in [torch.bfloat16, torch.float16]
+            else 1e-5
         )
 
         if torch.allclose(norms, torch.ones_like(norms), atol=tolerance):
