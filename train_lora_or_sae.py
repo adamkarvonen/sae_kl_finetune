@@ -322,13 +322,10 @@ if __name__ == "__main__":
     elif args.model_type == "llama":
         raise ValueError
         model_name = "meta-llama/Llama-3.2-1B"
-        sae_path_template = (
-            "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
+        sae_path_template = "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
+        LoRA_layers = (
+            list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
         )
-        LoRA_layers = list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
-
-    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
-        args.batch_size *= 2
 
     for trainer_id in trainer_ids:
         sae_path = sae_path_template.format(trainer_id=trainer_id, layer=layer)
