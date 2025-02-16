@@ -848,13 +848,15 @@ def train_model(
                     },
                     step=total_examples,
                 )
-                loss = ((kl_loss * alpha_kl + mse_loss) * 0.5) + GlobalSAE.sparsity_loss
-                loss.backward()
                 sae.l1_penalty = update_sparsity_penalty(
                     sae.l1_penalty, GlobalSAE.l0, target_l0
                 )
 
                 if sae_only:
+                    loss = (
+                        (kl_loss * alpha_kl + mse_loss) * 0.5
+                    ) + GlobalSAE.sparsity_loss
+                    loss.backward()
                     # Reconstruction loss matches original mse loss scale so an optional sparsity penalty stays relevant
 
                     # if training_type == TrainingType.SAE_FULL_FINETUNE:
@@ -889,8 +891,8 @@ def train_model(
                     #         step=total_examples,
                     #     )
                 else:
-                    # loss = kl_loss
-                    # loss.backward()
+                    loss = kl_loss * alpha_kl
+                    loss.backward()
                     torch.nn.utils.clip_grad_norm_(
                         peft_model.parameters(), max_norm=1.0
                     )
