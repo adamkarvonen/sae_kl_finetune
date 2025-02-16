@@ -743,12 +743,17 @@ def train_model(
         training_time_between_evals = 0
 
         use_kl = False
+        model_saved = False
 
         try:
             while total_examples < args.num_train_examples:
                 if total_examples >= (kl_start * args.num_train_examples):
                     if kl_start >= 0.9:
                         args.examples_per_eval = 2000
+                        if model_saved is False:
+                            print(f"Saving checkpoint at {total_examples} examples")
+                            torch.save(sae, "kl_start_checkpoint.pt")
+                            model_saved = True
                     use_kl = True
                 train_step_start = time.time()
 
