@@ -830,7 +830,7 @@ def train_model(
                         )
 
                 else:
-                    loss = kl_loss
+                    loss = kl_loss * alpha_kl
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(
                         peft_model.parameters(), max_norm=1.0
@@ -839,19 +839,6 @@ def train_model(
 
                 total_loss += loss.item() * batch_size
                 examples_since_last_eval += batch_size
-
-                # Clean up memory
-                del (
-                    inputs,
-                    base_outputs,
-                    base_logits,
-                    base_probs,
-                    peft_outputs,
-                    peft_logits,
-                    peft_log_probs,
-                    loss,
-                )
-                # torch.cuda.empty_cache()
 
                 training_time_between_evals += time.time() - train_step_start
                 train_loop.update(batch_size)

@@ -382,12 +382,6 @@ if __name__ == "__main__":
             list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
         )
 
-    if (
-        training_type == TrainingType.SAE_FULL_FINETUNE
-        or training_type == TrainingType.SAE_LORA
-    ):
-        args.batch_size *= 2
-
     for trainer_id in trainer_ids:
         sae_path = sae_path_template.format(trainer_id=trainer_id, layer=layer)
 
