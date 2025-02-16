@@ -182,7 +182,7 @@ def main(
     ):
         adapter = linear_adapter.LinearAdapter(adapter_d_in, peft_rank)
         adapter = adapter.to(device=device, dtype=torch.float32)
-    if (
+    elif (
         training_type == TrainingType.MLP_ADAPTER_AND_SAE
         or training_type == TrainingType.MLP_ADAPTER_ONLY
     ):
