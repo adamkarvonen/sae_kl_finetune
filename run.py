@@ -16,7 +16,12 @@ run_command(cmd)
 
 # Parameters to iterate over
 ranks = [16, 64, 768]
-lora_layers = ["adapter_only", "adapter_and_sae"]
+lora_layers = [
+    "adapter_only",
+    "adapter_and_sae",
+    "mlp_adapter_only",
+    "mlp_adapter_and_sae",
+]
 
 # # Run LoRA variations
 for rank, layer_type in itertools.product(ranks, lora_layers):

@@ -35,6 +35,8 @@ class TrainingType(Enum):
     SAE_FULL_FINETUNE = "sae_full_finetune"  # SAE with full model fine-tuning
     ADAPTER_ONLY = "adapter_only"
     ADAPTER_AND_SAE = "adapter_and_sae"
+    MLP_ADAPTER_ONLY = "mlp_adapter_only"
+    MLP_ADAPTER_AND_SAE = "mlp_adapter_and_sae"
 
 
 @dataclass
@@ -439,20 +441,14 @@ def _get_data_filenames(
             parts = sae_path.split("/", 1)
             sae_path = f"{parts[1].replace('/', '_')}"
 
-    if training_type == TrainingType.SAE_LORA:
-        peft_range = training_type.value
-    elif training_type == TrainingType.SAE_FULL_FINETUNE:
-        peft_range = training_type.value
-    elif training_type == TrainingType.ADAPTER_AND_SAE:
-        peft_range = training_type.value
-    elif training_type == TrainingType.ADAPTER_ONLY:
-        peft_range = training_type.value
-    else:
+    if training_type == TrainingType.LORA:
         peft_range = (
             f"{peft_layers[0]}-{peft_layers[-1]}"
             if len(peft_layers) > 1
             else peft_layers[0]
         )
+    else:
+        peft_range = training_type.value
 
     # Build base paths
     base_path = f"data/scaling" if sae_from_hf else f"data/TopK"
@@ -692,12 +688,7 @@ def train_model(
 
     sae_only = False
 
-    if (
-        training_type == TrainingType.SAE_FULL_FINETUNE
-        or training_type == TrainingType.SAE_LORA
-        or training_type == TrainingType.ADAPTER_ONLY
-        or training_type == TrainingType.ADAPTER_AND_SAE
-    ):
+    if training_type != TrainingType.LORA:
         sae_only = True
 
     args_config = {
@@ -731,9 +722,15 @@ def train_model(
             optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
         elif training_type == TrainingType.SAE_LORA:
             optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
-        elif training_type == TrainingType.ADAPTER_ONLY:
+        elif (
+            training_type == TrainingType.ADAPTER_ONLY
+            or training_type == TrainingType.MLP_ADAPTER_ONLY
+        ):
             optimizer = optim.AdamW(adapter.parameters(), lr=5e-5)
-        elif training_type == TrainingType.ADAPTER_AND_SAE:
+        elif (
+            training_type == TrainingType.ADAPTER_AND_SAE
+            or training_type == TrainingType.MLP_ADAPTER_AND_SAE
+        ):
             optimizer = optim.AdamW(
                 list(sae.parameters()) + list(adapter.parameters()), lr=5e-5
             )
@@ -802,6 +799,7 @@ def train_model(
                     if (
                         training_type == TrainingType.SAE_FULL_FINETUNE
                         or training_type == TrainingType.ADAPTER_AND_SAE
+                        or training_type == TrainingType.MLP_ADAPTER_AND_SAE
                     ):
                         sae.decoder.weight.grad = (
                             remove_gradient_parallel_to_decoder_directions(
@@ -823,6 +821,7 @@ def train_model(
                     if (
                         training_type == TrainingType.SAE_FULL_FINETUNE
                         or training_type == TrainingType.ADAPTER_AND_SAE
+                        or training_type == TrainingType.MLP_ADAPTER_AND_SAE
                     ):
                         # Make sure the decoder is still unit-norm
                         sae.decoder.weight.data = set_decoder_norm_to_unit_norm(

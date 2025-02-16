@@ -169,17 +169,24 @@ def main(
     elif training_type == TrainingType.SAE_FULL_FINETUNE:
         sae_module = sae_module.to(dtype=torch.float32)
 
+    if model_name == "google/gemma-2-2b":
+        adapter_d_in = 2304
+    elif model_name == "EleutherAI/pythia-160m-deduped":
+        adapter_d_in = 768
+    else:
+        raise ValueError("Unrecognized model")
+
     if (
         training_type == TrainingType.ADAPTER_AND_SAE
         or training_type == TrainingType.ADAPTER_ONLY
     ):
-        if model_name == "google/gemma-2-2b":
-            d_in = 2304
-        elif model_name == "EleutherAI/pythia-160m-deduped":
-            d_in = 768
-        else:
-            raise ValueError("Unrecognized model")
-        adapter = linear_adapter.LinearAdapter(d_in, peft_rank)
+        adapter = linear_adapter.LinearAdapter(adapter_d_in, peft_rank)
+        adapter = adapter.to(device=device, dtype=torch.float32)
+    if (
+        training_type == TrainingType.MLP_ADAPTER_AND_SAE
+        or training_type == TrainingType.MLP_ADAPTER_ONLY
+    ):
+        adapter = linear_adapter.MLPAdapter(adapter_d_in, peft_rank)
         adapter = adapter.to(device=device, dtype=torch.float32)
     else:
         adapter = None
@@ -193,6 +200,8 @@ def main(
     if (
         training_type == TrainingType.ADAPTER_AND_SAE
         or training_type == TrainingType.ADAPTER_ONLY
+        or training_type == TrainingType.MLP_ADAPTER_AND_SAE
+        or training_type == TrainingType.MLP_ADAPTER_ONLY
     ):
         print(f"Registering SAE and adapter hook (rank {peft_rank})")
         hook_handle = peft_model_layers[sae_layer].register_forward_hook(
@@ -255,6 +264,8 @@ def main(
     elif (
         training_type == TrainingType.ADAPTER_AND_SAE
         or training_type == TrainingType.ADAPTER_ONLY
+        or training_type == TrainingType.MLP_ADAPTER_AND_SAE
+        or training_type == TrainingType.MLP_ADAPTER_ONLY
     ):
         pass
     else:
@@ -293,6 +304,8 @@ if __name__ == "__main__":
             "sae_full_finetune",
             "adapter_only",
             "adapter_and_sae",
+            "mlp_adapter_only",
+            "mlp_adapter_and_sae",
         ],
         default="all",
         help="Which layers to apply LoRA to",
@@ -336,6 +349,10 @@ if __name__ == "__main__":
         training_type = TrainingType.ADAPTER_ONLY
     elif args.LoRA_layers == "adapter_and_sae":
         training_type = TrainingType.ADAPTER_AND_SAE
+    elif args.LoRA_layers == "mlp_adapter_only":
+        training_type = TrainingType.MLP_ADAPTER_ONLY
+    elif args.LoRA_layers == "mlp_adapter_and_sae":
+        training_type = TrainingType.MLP_ADAPTER_AND_SAE
     else:
         training_type = TrainingType.LORA
 
