@@ -37,11 +37,12 @@ class args:
     ctx_len = 1024
     num_val_tokens = 1_000_000  # 1_000_000
     # num_val_tokens = 10_000  # 1_000_000
-    examples_per_eval = 1000  # 1000
+    examples_per_eval = 10000  # 1000
     log_steps = 100
 
 
 def main(
+    kl_start: float,
     model_name: str,  # Model name
     sae_path: str,  # Path to pre-trained SAE
     sae_repo: str,
@@ -63,7 +64,11 @@ def main(
     use_16_bit: bool = True,
 ):
     torch.manual_seed(0)
-    kwargs = {key: value for key, value in locals().items() if key in signature(main).parameters}
+    kwargs = {
+        key: value
+        for key, value in locals().items()
+        if key in signature(main).parameters
+    }
 
     device_name = f"cuda:{device}" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
@@ -84,9 +89,31 @@ def main(
     print(f"Loaded {model_name} model and tokenizer:")
     # print(model)
 
-    sae_module = topk_sae.load_dictionary_learning_topk_sae(
-        repo_id=sae_repo, filename=sae_path, model_name=model_name, device=device, dtype=dtype
-    )
+    if model_name == "google/gemma-2-2b":
+        adapter_d_in = 2304
+    elif model_name == "EleutherAI/pythia-160m-deduped":
+        adapter_d_in = 768
+    else:
+        raise ValueError("Unrecognized model")
+
+    if training_type == TrainingType.SAE_FROM_SCRATCH:
+        sae_module = topk_sae.TopKSAE(
+            d_in=adapter_d_in,
+            d_sae=2**14,
+            k=80,
+            model_name=model_name,
+            hook_layer=sae_layer,
+            device=device,
+            dtype=dtype,
+        )
+    else:
+        sae_module = topk_sae.load_dictionary_learning_topk_sae(
+            repo_id=sae_repo,
+            filename=sae_path,
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+        )
     print("sae module", sae_module)
 
     model.requires_grad_(False)
@@ -115,7 +142,9 @@ def main(
     if os.path.exists(CE_increase_filename):
         print(f"CE_increase_filename already exists: {CE_increase_filename}")
         return
-    print(f"CE_increase_filename does not exist: {CE_increase_filename}, starting training")
+    print(
+        f"CE_increase_filename does not exist: {CE_increase_filename}, starting training"
+    )
 
     # train_gen, _ = hf_dataset_to_generator(dataset, tokenizer, args)
 
@@ -155,7 +184,10 @@ def main(
         )
         sae_module = get_peft_model(sae_module, lora_config)
         sae_module.print_trainable_parameters()
-    elif training_type == TrainingType.SAE_FULL_FINETUNE:
+    elif (
+        training_type == TrainingType.SAE_FULL_FINETUNE
+        or training_type == TrainingType.SAE_FROM_SCRATCH
+    ):
         sae_module = sae_module.to(dtype=torch.float32)
 
     print("BASE MODEL LOSS")
@@ -175,6 +207,7 @@ def main(
     print(f"Initial loss: {initial_loss:.4f}")
 
     val_losses, total_training_minutes = train_model(
+        kl_start=kl_start,
         peft_model=peft_model,
         sae=sae_module,
         train_gen=train_gen,
@@ -212,7 +245,11 @@ def main(
 
     if not save_model_file:
         print()
-    elif training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+    elif (
+        training_type == TrainingType.SAE_FULL_FINETUNE
+        or training_type == TrainingType.SAE_FROM_SCRATCH
+        or training_type == TrainingType.SAE_LORA
+    ):
         utils.save_sae(sae_module, peft_rank, **kwargs)
     else:
         save_model(peft_model, peft_rank, **kwargs)
@@ -227,7 +264,9 @@ if __name__ == "__main__":
     python train_lora_or_sae.py --device 0 --model_type "gemma" --sae_layer 12 --rank 16 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers sae_lora
     """
     # Run Experiment Args
-    parser = argparse.ArgumentParser(description="Arguments related to running experiment")
+    parser = argparse.ArgumentParser(
+        description="Arguments related to running experiment"
+    )
     parser.add_argument("--device", type=int, required=True, help="CUDA device index")
     parser.add_argument(
         "--model_type",
@@ -240,17 +279,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--LoRA_layers",
         type=str,
-        choices=["all", "after", "single", "sae_lora", "sae_full_finetune"],
+        choices=[
+            "all",
+            "after",
+            "single",
+            "sae_lora",
+            "sae_full_finetune",
+            "sae_from_scratch",
+        ],
         default="all",
         help="Which layers to apply LoRA to",
     )
     parser.add_argument("--rank", type=int, required=True, help="LoRA rank")
-    parser.add_argument("--save_model", action="store_true", help="Whether to save the model")
+    parser.add_argument(
+        "--save_model", action="store_true", help="Whether to save the model"
+    )
     parser.add_argument(
         "--num_train_examples",
         type=int,
         help="Number of training examples",
-        choices=[30, 150, 300, 3_000, 15_000, 30_000, 100_000],
+        choices=[30, 150, 300, 3_000, 15_000, 30_000, 100_000, 500_000],
         required=True,
     )
     parser.add_argument(
@@ -263,11 +311,18 @@ if __name__ == "__main__":
         type=int,
         help="Train on a specific trainer_id. If None, train on all trainer ids",
     )
+    parser.add_argument(
+        "--kl_percent",
+        type=int,
+        required=True,
+        help="Percent of training to start using KL loss",
+    )
 
     parsed_args = parser.parse_args()
     for arg_name, arg_value in vars(parsed_args).items():
         setattr(args, arg_name, arg_value)
 
+    kl_start = args.kl_percent / 100
     layer = args.sae_layer
     rank = args.rank
     # percents = [args.checkpoint_percent] if args.checkpoint_percent else range(10, 101, 10)
@@ -277,6 +332,8 @@ if __name__ == "__main__":
         training_type = TrainingType.SAE_LORA
     elif args.LoRA_layers == "sae_full_finetune":
         training_type = TrainingType.SAE_FULL_FINETUNE
+    elif args.LoRA_layers == "sae_from_scratch":
+        training_type = TrainingType.SAE_FROM_SCRATCH
     else:
         training_type = TrainingType.LORA
 
@@ -286,9 +343,7 @@ if __name__ == "__main__":
     if args.model_type == "gemma":
         model_name = "google/gemma-2-2b"
         sae_repo = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        sae_path_template = (
-            "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
-        )
+        sae_path_template = "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(26))
             if args.LoRA_layers == "all"
@@ -304,9 +359,7 @@ if __name__ == "__main__":
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
-        sae_path_template = (
-            "TopK_pythia-160m-deduped__0108/resid_post_layer_8/trainer_{trainer_id}/ae.pt"
-        )
+        sae_path_template = "TopK_pythia-160m-deduped__0108/resid_post_layer_8/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(12))
             if args.LoRA_layers == "all"
@@ -322,25 +375,23 @@ if __name__ == "__main__":
     elif args.model_type == "llama":
         raise ValueError
         model_name = "meta-llama/Llama-3.2-1B"
-        sae_path_template = (
-            "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
+        sae_path_template = "saved_saes/Llama-3.2-1B/normal/expansion_8_L0_64-{pct}pct/model.layers.{layer}"
+        LoRA_layers = (
+            list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
         )
-        LoRA_layers = list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
-
-    if training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
-        args.batch_size *= 2
 
     for trainer_id in trainer_ids:
         sae_path = sae_path_template.format(trainer_id=trainer_id, layer=layer)
 
         main(
+            kl_start=kl_start,
             model_name=model_name,
             sae_path=sae_path,
             sae_repo=sae_repo,
             sae_from_hf=False,
             dataset=dataset_name,
-            experiment_name=f"{args.model_type}_LoRA",
-            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}",
+            experiment_name=f"{args.model_type}_LoRA_from_scratch",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_trainer_{trainer_id}_kl_{args.kl_percent}",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",
