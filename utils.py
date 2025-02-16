@@ -423,6 +423,7 @@ def _get_data_filenames(
     num_train_examples: int,
     use_16_bit: bool,
     training_type: TrainingType,
+    kl_percent: int,
 ) -> Tuple[str, str, str]:
     """
     Helper function to generate filenames for CE increase and validation losses data.
@@ -445,6 +446,7 @@ def _get_data_filenames(
         )
     else:
         peft_range = training_type.value
+        peft_range = f"{peft_range}_{kl_percent}"
 
     # Build base paths
     base_path = f"data/scaling" if sae_from_hf else f"data/TopK"
@@ -478,6 +480,7 @@ def save_data(
         num_train_examples=kwargs["num_train_examples"],
         use_16_bit=kwargs["use_16_bit"],
         training_type=kwargs["training_type"],
+        kl_percent=kwargs["kl_percent"],
     )
 
     os.makedirs(os.path.dirname(CE_increase_filename), exist_ok=True)
@@ -511,6 +514,7 @@ def load_data(**kwargs) -> Tuple[dict, dict, dict]:
         num_train_examples=kwargs["num_train_examples"],
         use_16_bit=kwargs["use_16_bit"],
         training_type=kwargs["training_type"],
+        kl_percent=kwargs["kl_percent"],
     )
 
     try:
@@ -581,6 +585,8 @@ def save_sae(sae, rank, **kwargs) -> None:
     sae_from_hf = kwargs["sae_from_hf"]
     training_type = kwargs["training_type"]
 
+    kl_percent = kwargs["kl_percent"]
+
     if sae_path:
         if not sae_from_hf:
             sae_path = sae_path.split("/")[-2]
@@ -596,6 +602,7 @@ def save_sae(sae, rank, **kwargs) -> None:
         or training_type == TrainingType.SAE_FROM_SCRATCH
     ):
         peft_range = training_type.value
+        peft_range = f"{peft_range}_{kl_percent}"
     else:
         raise ValueError("This is only for saving SAEs")
 
@@ -740,6 +747,8 @@ def train_model(
         try:
             while total_examples < args.num_train_examples:
                 if total_examples >= (kl_start * args.num_train_examples):
+                    if kl_start >= 0.9:
+                        args.examples_per_eval = 2000
                     use_kl = True
                 train_step_start = time.time()
 
@@ -889,7 +898,7 @@ def train_model(
             train_loop.close()
 
         # Final evaluation
-        if not track_evals:
+        if track_evals:
             val_loss = evaluate(peft_model, val_dataset)
             total_training_minutes += training_time_between_evals / 60
 

@@ -69,6 +69,7 @@ def main(
         for key, value in locals().items()
         if key in signature(main).parameters
     }
+    kwargs["kl_percent"] = int(kl_start * 100)
 
     device_name = f"cuda:{device}" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
@@ -137,6 +138,7 @@ def main(
         num_train_examples=num_train_examples,
         use_16_bit=use_16_bit,
         training_type=training_type,
+        kl_percent=int(kl_start * 100),
     )[0]
     print(f"CE_increase_filename: {CE_increase_filename}")
     if os.path.exists(CE_increase_filename):
