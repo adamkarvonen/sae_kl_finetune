@@ -577,16 +577,16 @@ def save_model(peft_model, rank, **kwargs) -> None:
     print(f"Saved model to {model_path}")
 
 
-def save_sae(sae, rank, **kwargs) -> None:
-    sae_path = kwargs["sae_path"]
-    model_name = kwargs["model_name"]
-    peft_layers = kwargs["peft_layers"]
-    peft_type = kwargs["peft_type"]
-    sae_from_hf = kwargs["sae_from_hf"]
-    training_type = kwargs["training_type"]
-
-    kl_percent = kwargs["kl_percent"]
-
+def save_sae(
+    sae,
+    rank,
+    sae_path: str,
+    model_name: str,
+    sae_from_hf: bool,
+    training_type: TrainingType,
+    kl_percent: int,
+    checkpoint_step: Optional[int] = None,
+) -> None:
     if sae_path:
         if not sae_from_hf:
             sae_path = sae_path.split("/")[-2]
@@ -611,7 +611,14 @@ def save_sae(sae, rank, **kwargs) -> None:
     save_dir = f"{base_path}/peft_{peft_range}"
     os.makedirs(save_dir, exist_ok=True)
 
-    model_path = os.path.join(save_dir, f"rank_{rank}")
+    if training_type == TrainingType.SAE_LORA:
+        model_path = os.path.join(save_dir, f"rank_{rank}")
+    else:
+        model_path = os.path.join(save_dir)
+
+    if checkpoint_step is not None:
+        model_path = os.path.join(base_path, f"checkpoints_{checkpoint_step}")
+
     os.makedirs(model_path, exist_ok=True)
 
     final = {k: v.cpu() for k, v in sae.state_dict().items()}
@@ -680,6 +687,7 @@ def train_model(
     project_name: str,
     run_name: str,
     training_type: TrainingType,
+    sae_path: str,
     initial_loss: Optional[float] = None,
     base_loss: Optional[float] = None,
     track_evals: bool = True,
@@ -752,7 +760,16 @@ def train_model(
                         args.examples_per_eval = 2000
                         if model_saved is False:
                             print(f"Saving checkpoint at {total_examples} examples")
-                            torch.save(sae, "kl_start_checkpoint.pt")
+                            save_sae(
+                                sae,
+                                rank,
+                                sae_path,
+                                peft_model.name_or_path,
+                                False,
+                                training_type,
+                                (kl_start * 100),
+                                checkpoint_step=total_examples,
+                            )
                             model_saved = True
                     use_kl = True
                 train_step_start = time.time()

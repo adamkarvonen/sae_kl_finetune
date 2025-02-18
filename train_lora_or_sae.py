@@ -43,6 +43,7 @@ class args:
 
 def main(
     kl_start: float,
+    k: int,
     model_name: str,  # Model name
     sae_path: str,  # Path to pre-trained SAE
     sae_repo: str,
@@ -101,7 +102,7 @@ def main(
         sae_module = topk_sae.TopKSAE(
             d_in=adapter_d_in,
             d_sae=2**14,
-            k=80,
+            k=k,
             model_name=model_name,
             hook_layer=sae_layer,
             device=device,
@@ -222,6 +223,7 @@ def main(
         base_loss=base_loss,
         track_evals=track_evals,
         training_type=training_type,
+        sae_path=sae_path,
     )
     converged_loss = val_losses[-1]
 
@@ -252,7 +254,15 @@ def main(
         or training_type == TrainingType.SAE_FROM_SCRATCH
         or training_type == TrainingType.SAE_LORA
     ):
-        utils.save_sae(sae_module, peft_rank, **kwargs)
+        utils.save_sae(
+            sae_module,
+            peft_rank,
+            sae_path,
+            model_name,
+            False,
+            training_type,
+            kl_percent=(kl_start * 100),
+        )
     else:
         save_model(peft_model, peft_rank, **kwargs)
 
@@ -308,16 +318,22 @@ if __name__ == "__main__":
         type=int,
         help="Train on a specific checkpoint percent. If None, train on all checkpoints",
     )
-    parser.add_argument(
-        "--trainer_id",
-        type=int,
-        help="Train on a specific trainer_id. If None, train on all trainer ids",
-    )
+    # parser.add_argument(
+    #     "--trainer_id",
+    #     type=int,
+    #     help="Train on a specific trainer_id. If None, train on all trainer ids",
+    # )
     parser.add_argument(
         "--kl_percent",
         type=int,
         required=True,
         help="Percent of training to start using KL loss",
+    )
+    parser.add_argument(
+        "--k",
+        type=int,
+        required=True,
+        help="TopK L0 value",
     )
 
     parsed_args = parser.parse_args()
@@ -328,7 +344,7 @@ if __name__ == "__main__":
     layer = args.sae_layer
     rank = args.rank
     # percents = [args.checkpoint_percent] if args.checkpoint_percent else range(10, 101, 10)
-    trainer_ids = [args.trainer_id] if args.trainer_id is not None else range(1, 4)
+    trainer_ids = [args.k]
 
     if args.LoRA_layers == "sae_lora":
         training_type = TrainingType.SAE_LORA
@@ -387,13 +403,14 @@ if __name__ == "__main__":
 
         main(
             kl_start=kl_start,
+            k=args.k,
             model_name=model_name,
             sae_path=sae_path,
             sae_repo=sae_repo,
             sae_from_hf=False,
             dataset=dataset_name,
             experiment_name=f"{args.model_type}_LoRA_from_scratch",
-            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_trainer_{trainer_id}_kl_{args.kl_percent}",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_trainer_{trainer_id}_kl_{args.kl_percent}_k_{args.k}",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",
