@@ -6,6 +6,7 @@ import time
 import pickle
 from enum import Enum
 import einops
+import gc
 
 import json
 import torch
@@ -637,6 +638,9 @@ def evaluate(
 
     val_loss = 0
     total_examples = 0
+
+    gc.collect()
+    torch.cuda.empty_cache()
 
     with torch.no_grad():
         val_loop = tqdm(val_dataset, leave=True, desc="Validation")
