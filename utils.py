@@ -674,6 +674,7 @@ def train_model(
     project_name: str,
     run_name: str,
     training_type: TrainingType,
+    gradient_accumulation_steps: int,
     initial_loss: Optional[float] = None,
     base_loss: Optional[float] = None,
     track_evals: bool = True,
@@ -730,8 +731,9 @@ def train_model(
         examples_since_last_eval = 0
 
         train_loop = tqdm(desc="Training", total=args.num_train_examples)
-
         training_time_between_evals = 0
+        optimizer.zero_grad()  # Move initial gradient zeroing outside the loop
+        accumulated_steps = 0
 
         try:
             while total_examples < args.num_train_examples:
@@ -739,8 +741,6 @@ def train_model(
 
                 inputs = next(train_gen).to(device)
                 batch_size = inputs.size(0)
-
-                optimizer.zero_grad()
 
                 GlobalSAE.current_batch = inputs.detach()
                 if mse_only:
@@ -788,25 +788,32 @@ def train_model(
                         alpha_kl = (mse_loss / (kl_loss + 1e-8)).detach()
                         loss = (kl_loss * alpha_kl + mse_loss) * 0.5
 
+                    # Scale loss by gradient accumulation steps
+                    loss = loss / gradient_accumulation_steps
                     loss.backward()
-                    if training_type == TrainingType.SAE_FULL_FINETUNE:
-                        sae.decoder.weight.grad = (
-                            remove_gradient_parallel_to_decoder_directions(
-                                sae.decoder.weight,
-                                sae.decoder.weight.grad,
-                                sae.d_in,
-                                sae.d_sae,
-                            )
-                        )
-                    torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
-                    optimizer.step()
-                    # clip grad norm and remove grads parallel to decoder directions
 
-                    if training_type == TrainingType.SAE_FULL_FINETUNE:
-                        # Make sure the decoder is still unit-norm
-                        sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
-                            sae.decoder.weight, sae.d_in, sae.d_sae
-                        )
+                    accumulated_steps += 1
+                    if accumulated_steps == gradient_accumulation_steps:
+                        if training_type == TrainingType.SAE_FULL_FINETUNE:
+                            sae.decoder.weight.grad = (
+                                remove_gradient_parallel_to_decoder_directions(
+                                    sae.decoder.weight,
+                                    sae.decoder.weight.grad,
+                                    sae.d_in,
+                                    sae.d_sae,
+                                )
+                            )
+                        torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        accumulated_steps = 0
+
+                        # clip grad norm and remove grads parallel to decoder directions
+                        if training_type == TrainingType.SAE_FULL_FINETUNE:
+                            # Make sure the decoder is still unit-norm
+                            sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
+                                sae.decoder.weight, sae.d_in, sae.d_sae
+                            )
 
                     if examples_since_last_eval % args.log_steps == 0:
                         wandb.log(
@@ -819,13 +826,21 @@ def train_model(
                         )
                 else:
                     loss = kl_loss
+                    # Scale loss by gradient accumulation steps
+                    loss = loss / gradient_accumulation_steps
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(
-                        peft_model.parameters(), max_norm=1.0
-                    )
-                    optimizer.step()
 
-                total_loss += loss.item() * batch_size
+                    accumulated_steps += 1
+                    if accumulated_steps == gradient_accumulation_steps:
+                        torch.nn.utils.clip_grad_norm_(
+                            peft_model.parameters(), max_norm=1.0
+                        )
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        accumulated_steps = 0
+
+                # Use the unscaled loss for logging
+                total_loss += (loss.item() * gradient_accumulation_steps) * batch_size
                 total_examples += batch_size
                 examples_since_last_eval += batch_size
 

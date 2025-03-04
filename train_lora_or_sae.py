@@ -54,6 +54,7 @@ def main(
     peft_type: str,  # "attn", "mlp", "pre-mlp", "both", "gate", "up"
     num_train_examples: int,
     training_type: TrainingType,
+    gradient_accumulation_steps: int,
     peft_rank: int = 64,  # peft rank
     track_evals: bool = False,  # Whether to track evals
     device: int = 0,
@@ -199,6 +200,7 @@ def main(
         track_evals=track_evals,
         training_type=training_type,
         mse_only=mse_only,
+        gradient_accumulation_steps=gradient_accumulation_steps,
     )
     converged_loss = val_losses[-1]
 
@@ -322,7 +324,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 8
+        args.batch_size = 2
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
@@ -347,6 +349,13 @@ if __name__ == "__main__":
             list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
         )
 
+    gradient_accumulation_steps = 4
+
+    if args.mse_only:
+        mse_only_str = "_mse_only"
+    else:
+        mse_only_str = ""
+
     for trainer_id in trainer_ids:
         sae_path = sae_path_template.format(trainer_id=trainer_id, layer=layer)
 
@@ -357,7 +366,7 @@ if __name__ == "__main__":
             sae_from_hf=False,
             dataset=dataset_name,
             experiment_name=f"{args.model_type}_LoRA",
-            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_mse_only",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}{mse_only_str}_trainer_{trainer_id}",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",
@@ -370,4 +379,5 @@ if __name__ == "__main__":
             use_16_bit=use_16_bit,
             training_type=training_type,
             mse_only=args.mse_only,
+            gradient_accumulation_steps=gradient_accumulation_steps,
         )
