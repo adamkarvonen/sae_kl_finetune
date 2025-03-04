@@ -87,7 +87,7 @@ def main(
     print(f"Loaded {model_name} model and tokenizer:")
     # print(model)
 
-    sae_module = relu_sae.load_dictionary_learning_relu_sae(
+    sae_module = topk_sae.load_dictionary_learning_topk_sae(
         repo_id=sae_repo,
         filename=sae_path,
         model_name=model_name,
@@ -318,8 +318,8 @@ if __name__ == "__main__":
 
     if args.model_type == "gemma":
         model_name = "google/gemma-2-2b"
-        sae_repo = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        sae_path_template = "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
+        sae_repo = "canrager/saebench_gemma-2-2b_width-2pow16_date-0107"
+        sae_path_template = "gemma-2-2b_top_k_width-2pow16_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(26))
             if args.LoRA_layers == "all"
@@ -331,7 +331,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 1
+        args.batch_size = 8
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
@@ -365,8 +365,8 @@ if __name__ == "__main__":
             sae_repo=sae_repo,
             sae_from_hf=False,
             dataset=dataset_name,
-            experiment_name=f"{args.model_type}_LoRA_relu_targeted_l0_working",
-            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_trainer_id_{trainer_id}",
+            experiment_name=f"{args.model_type}_LoRA",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_trainer_id_{trainer_id}_normed",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",

@@ -844,52 +844,31 @@ def train_model(
                         "l0": GlobalSAE.l0,
                         "l1_loss": GlobalSAE.l1_loss,
                         "sparsity_loss": GlobalSAE.sparsity_loss,
-                        "l1_penalty": sae.l1_penalty,
                     },
                     step=total_examples,
                 )
-                sae.l1_penalty = update_sparsity_penalty(
-                    sae.l1_penalty, GlobalSAE.l0, target_l0
-                )
-
                 if sae_only:
-                    loss = (
-                        (kl_loss * alpha_kl + mse_loss) * 0.5
-                    ) + GlobalSAE.sparsity_loss
+                    loss = (kl_loss * alpha_kl + mse_loss) * 0.5
                     loss.backward()
                     # Reconstruction loss matches original mse loss scale so an optional sparsity penalty stays relevant
 
-                    # if training_type == TrainingType.SAE_FULL_FINETUNE:
-                    #     sae.decoder.weight.grad = (
-                    #         remove_gradient_parallel_to_decoder_directions(
-                    #             sae.decoder.weight,
-                    #             sae.decoder.weight.grad,
-                    #             sae.d_in,
-                    #             sae.d_sae,
-                    #         )
-                    #     )
+                    if training_type == TrainingType.SAE_FULL_FINETUNE:
+                        sae.decoder.weight.grad = (
+                            remove_gradient_parallel_to_decoder_directions(
+                                sae.decoder.weight,
+                                sae.decoder.weight.grad,
+                                sae.d_in,
+                                sae.d_sae,
+                            )
+                        )
                     torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
                     optimizer.step()
 
-                    # if training_type == TrainingType.SAE_FULL_FINETUNE:
-                    #     # Make sure the decoder is still unit-norm
-                    #     sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
-                    #         sae.decoder.weight, sae.d_in, sae.d_sae
-                    #     )
-
-                    # if total_examples % args.log_steps == 0 or True:
-                    #     wandb.log(
-                    #         {
-                    #             "mse_loss": mse_loss,
-                    #             "kl_loss": kl_loss,
-                    #             "alpha_kl": alpha_kl,
-                    #             "l0": GlobalSAE.l0,
-                    #             "l1_loss": GlobalSAE.l1_loss,
-                    #             "sparsity_loss": GlobalSAE.sparsity_loss,
-                    #             "l1_penalty": sae.l1_penalty,
-                    #         },
-                    #         step=total_examples,
-                    #     )
+                    if training_type == TrainingType.SAE_FULL_FINETUNE:
+                        # Make sure the decoder is still unit-norm
+                        sae.decoder.weight.data = set_decoder_norm_to_unit_norm(
+                            sae.decoder.weight, sae.d_in, sae.d_sae
+                        )
                 else:
                     loss = kl_loss * alpha_kl
                     loss.backward()
@@ -1066,9 +1045,6 @@ def get_sae_hook(sae_module: relu_sae.ReluSAE, tokenizer, sae_from_hf=False):
 
         GlobalSAE.l0 = (f != 0).float().sum(dim=-1).mean()
         GlobalSAE.l1_loss = f.norm(p=1, dim=-1).mean()
-        GlobalSAE.sparsity_loss = (
-            (f * sae_module.decoder.weight.norm(p=2, dim=0)).sum(dim=-1).mean()
-        ) * sae_module.l1_penalty
 
         reconstructed_output *= NORM_SCALE
 
