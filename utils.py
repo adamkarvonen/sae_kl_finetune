@@ -679,13 +679,14 @@ def train_model(
     base_loss: Optional[float] = None,
     track_evals: bool = True,
     mse_only: bool = False,
+    start_lr: float = 5e-5,
+    end_lr: float = 5e-6,
 ) -> Tuple[List[float], List[float]]:
-    """Train the model using KL divergence loss"""
+    """Train the model using KL divergence loss with linear LR decay"""
     print("Training model with KL divergence loss")
     device = peft_model.device
 
     sae_only = False
-
     if (
         training_type == TrainingType.SAE_FULL_FINETUNE
         or training_type == TrainingType.SAE_LORA
@@ -697,6 +698,22 @@ def train_model(
         for attr in dir(args)
         if not callable(getattr(args, attr)) and not attr.startswith("__")
     }
+
+    # Initialize optimizer with start_lr
+    if training_type == TrainingType.SAE_FULL_FINETUNE:
+        optimizer = optim.AdamW(sae.parameters(), lr=start_lr)
+    elif training_type == TrainingType.SAE_LORA:
+        optimizer = optim.AdamW(sae.parameters(), lr=start_lr)
+    else:
+        optimizer = optim.AdamW(peft_model.parameters(), lr=start_lr)
+        peft_model.train()
+
+    # Create learning rate scheduler
+    def lr_lambda(current_step: int) -> float:
+        progress = current_step / args.num_train_examples
+        return max(end_lr / start_lr, 1.0 - (1.0 - end_lr / start_lr) * progress)
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     train_losses = []
     val_losses = [initial_loss] if initial_loss is not None else []
@@ -717,15 +734,6 @@ def train_model(
                 },
                 step=total_examples,
             )
-
-        if training_type == TrainingType.SAE_FULL_FINETUNE:
-            # Optional lower LR for full fine tune
-            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
-        elif training_type == TrainingType.SAE_LORA:
-            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
-        else:
-            optimizer = optim.AdamW(peft_model.parameters(), lr=5e-5)
-            peft_model.train()
 
         total_loss = 0
         examples_since_last_eval = 0
@@ -805,6 +813,7 @@ def train_model(
                             )
                         torch.nn.utils.clip_grad_norm_(sae.parameters(), max_norm=1.0)
                         optimizer.step()
+                        scheduler.step(total_examples)
                         optimizer.zero_grad()
                         accumulated_steps = 0
 
@@ -816,11 +825,13 @@ def train_model(
                             )
 
                     if examples_since_last_eval % args.log_steps == 0:
+                        current_lr = optimizer.param_groups[0]["lr"]
                         wandb.log(
                             {
                                 "mse_loss": mse_loss,
                                 "kl_loss": kl_loss,
                                 "alpha_kl": alpha_kl,
+                                "learning_rate": current_lr,
                             },
                             step=total_examples,
                         )
@@ -836,6 +847,7 @@ def train_model(
                             peft_model.parameters(), max_norm=1.0
                         )
                         optimizer.step()
+                        scheduler.step(total_examples)
                         optimizer.zero_grad()
                         accumulated_steps = 0
 

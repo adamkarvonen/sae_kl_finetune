@@ -349,7 +349,9 @@ if __name__ == "__main__":
             list(range(16)) if args.LoRA_layers == "all" else list(range(layer + 1, 16))
         )
 
-    gradient_accumulation_steps = 4
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+    gradient_accumulation_steps = 1
 
     if args.mse_only:
         mse_only_str = "_mse_only"
