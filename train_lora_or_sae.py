@@ -61,9 +61,14 @@ def main(
     args: args = args,
     dtype=torch.bfloat16,
     use_16_bit: bool = True,
+    mse_only: bool = False,
 ):
     torch.manual_seed(0)
-    kwargs = {key: value for key, value in locals().items() if key in signature(main).parameters}
+    kwargs = {
+        key: value
+        for key, value in locals().items()
+        if key in signature(main).parameters
+    }
 
     device_name = f"cuda:{device}" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
@@ -85,7 +90,11 @@ def main(
     # print(model)
 
     sae_module = topk_sae.load_dictionary_learning_topk_sae(
-        repo_id=sae_repo, filename=sae_path, model_name=model_name, device=device, dtype=dtype
+        repo_id=sae_repo,
+        filename=sae_path,
+        model_name=model_name,
+        device=device,
+        dtype=dtype,
     )
     print("sae module", sae_module)
 
@@ -115,7 +124,9 @@ def main(
     if os.path.exists(CE_increase_filename):
         print(f"CE_increase_filename already exists: {CE_increase_filename}")
         return
-    print(f"CE_increase_filename does not exist: {CE_increase_filename}, starting training")
+    print(
+        f"CE_increase_filename does not exist: {CE_increase_filename}, starting training"
+    )
 
     # train_gen, _ = hf_dataset_to_generator(dataset, tokenizer, args)
 
@@ -187,6 +198,7 @@ def main(
         base_loss=base_loss,
         track_evals=track_evals,
         training_type=training_type,
+        mse_only=mse_only,
     )
     converged_loss = val_losses[-1]
 
@@ -212,7 +224,10 @@ def main(
 
     if not save_model_file:
         print()
-    elif training_type == TrainingType.SAE_FULL_FINETUNE or training_type == TrainingType.SAE_LORA:
+    elif (
+        training_type == TrainingType.SAE_FULL_FINETUNE
+        or training_type == TrainingType.SAE_LORA
+    ):
         utils.save_sae(sae_module, peft_rank, **kwargs)
     else:
         save_model(peft_model, peft_rank, **kwargs)
@@ -227,7 +242,9 @@ if __name__ == "__main__":
     python train_lora_or_sae.py --device 0 --model_type "gemma" --sae_layer 12 --rank 16 --num_train_examples 15000 --save_model --trainer_id 2 --LoRA_layers sae_lora
     """
     # Run Experiment Args
-    parser = argparse.ArgumentParser(description="Arguments related to running experiment")
+    parser = argparse.ArgumentParser(
+        description="Arguments related to running experiment"
+    )
     parser.add_argument("--device", type=int, required=True, help="CUDA device index")
     parser.add_argument(
         "--model_type",
@@ -245,7 +262,9 @@ if __name__ == "__main__":
         help="Which layers to apply LoRA to",
     )
     parser.add_argument("--rank", type=int, required=True, help="LoRA rank")
-    parser.add_argument("--save_model", action="store_true", help="Whether to save the model")
+    parser.add_argument(
+        "--save_model", action="store_true", help="Whether to save the model"
+    )
     parser.add_argument(
         "--num_train_examples",
         type=int,
@@ -262,6 +281,11 @@ if __name__ == "__main__":
         "--trainer_id",
         type=int,
         help="Train on a specific trainer_id. If None, train on all trainer ids",
+    )
+    parser.add_argument(
+        "--mse_only",
+        action="store_true",
+        help="Whether to use MSE loss only for training",
     )
 
     parsed_args = parser.parse_args()
@@ -285,10 +309,8 @@ if __name__ == "__main__":
 
     if args.model_type == "gemma":
         model_name = "google/gemma-2-2b"
-        sae_repo = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        sae_path_template = (
-            "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
-        )
+        sae_repo = "canrager/saebench_gemma-2-2b_width-2pow16_date-0107"
+        sae_path_template = "gemma-2-2b_top_k_width-2pow16_date-0107/resid_post_layer_12/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(26))
             if args.LoRA_layers == "all"
@@ -300,13 +322,11 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 1
+        args.batch_size = 8
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
-        sae_path_template = (
-            "TopK_pythia-160m-deduped__0108/resid_post_layer_8/trainer_{trainer_id}/ae.pt"
-        )
+        sae_path_template = "TopK_pythia-160m-deduped__0108/resid_post_layer_8/trainer_{trainer_id}/ae.pt"
         LoRA_layers = (
             list(range(12))
             if args.LoRA_layers == "all"
@@ -337,7 +357,7 @@ if __name__ == "__main__":
             sae_from_hf=False,
             dataset=dataset_name,
             experiment_name=f"{args.model_type}_LoRA",
-            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_mse_only",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",
@@ -349,4 +369,5 @@ if __name__ == "__main__":
             dtype=dtype,
             use_16_bit=use_16_bit,
             training_type=training_type,
+            mse_only=args.mse_only,
         )
