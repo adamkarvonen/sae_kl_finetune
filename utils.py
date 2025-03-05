@@ -684,7 +684,6 @@ def train_model(
     track_evals: bool = True,
     mse_only: bool = False,
     start_lr: float = 5e-5,
-    end_lr: float = 5e-6,
 ) -> Tuple[List[float], List[float]]:
     """Train the model using KL divergence loss with linear LR decay"""
     print("Training model with KL divergence loss")
@@ -712,10 +711,9 @@ def train_model(
         optimizer = optim.AdamW(peft_model.parameters(), lr=start_lr)
         peft_model.train()
 
-    # Create learning rate scheduler
     def lr_lambda(current_step: int) -> float:
         progress = current_step / args.num_train_examples
-        return max(end_lr / start_lr, 1.0 - (1.0 - end_lr / start_lr) * progress)
+        return max(0.0, 1.0 - progress)
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 

@@ -1,8 +1,13 @@
 import subprocess
 import itertools
+import os
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
 def run_command(cmd):
+    env = os.environ.copy()
+    env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments=True"
     print(f"\nExecuting: {cmd}")
     subprocess.run(cmd, shell=True)
 
