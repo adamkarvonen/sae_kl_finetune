@@ -681,6 +681,7 @@ def train_model(
     initial_loss: Optional[float] = None,
     base_loss: Optional[float] = None,
     track_evals: bool = True,
+    start_lr: float = 5e-5,
 ) -> Tuple[List[float], List[float]]:
     """Train the model using KL divergence loss"""
     print("Training model with KL divergence loss")
@@ -719,24 +720,32 @@ def train_model(
 
         if training_type == TrainingType.SAE_FULL_FINETUNE:
             # Optional lower LR for full fine tune
-            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
+            optimizer = optim.AdamW(sae.parameters(), lr=start_lr)
         elif training_type == TrainingType.SAE_LORA:
-            optimizer = optim.AdamW(sae.parameters(), lr=5e-5)
+            optimizer = optim.AdamW(sae.parameters(), lr=start_lr)
         elif (
             training_type == TrainingType.ADAPTER_ONLY
             or training_type == TrainingType.MLP_ADAPTER_ONLY
         ):
-            optimizer = optim.AdamW(adapter.parameters(), lr=5e-5)
+            optimizer = optim.AdamW(adapter.parameters(), lr=start_lr)
         elif (
             training_type == TrainingType.ADAPTER_AND_SAE
             or training_type == TrainingType.MLP_ADAPTER_AND_SAE
         ):
-            optimizer = optim.AdamW(
-                list(sae.parameters()) + list(adapter.parameters()), lr=5e-5
-            )
+            # Start with SAE only optimizer
+            optimizer = optim.AdamW(sae.parameters(), lr=start_lr)
+            # Create adapter optimizer for second phase
+            adapter_optimizer = optim.AdamW(adapter.parameters(), lr=start_lr)
+            halfway_point = args.num_train_examples // 2
         else:
-            optimizer = optim.AdamW(peft_model.parameters(), lr=5e-5)
+            optimizer = optim.AdamW(peft_model.parameters(), lr=start_lr)
             peft_model.train()
+
+        # def lr_lambda(current_step: int) -> float:
+        #     progress = current_step / args.num_train_examples
+        #     return max(0.0, 1.0 - progress)
+
+        # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
         total_loss = 0
         examples_since_last_eval = 0
@@ -815,8 +824,17 @@ def train_model(
                             adapter.parameters(), max_norm=1.0
                         )
 
-                    optimizer.step()
-                    # clip grad norm and remove grads parallel to decoder directions
+                    # Switch optimizers halfway through for ADAPTER_AND_SAE types
+                    if (
+                        training_type == TrainingType.ADAPTER_AND_SAE
+                        or training_type == TrainingType.MLP_ADAPTER_AND_SAE
+                    ):
+                        if total_examples < halfway_point:
+                            optimizer.step()
+                        else:
+                            adapter_optimizer.step()
+                    else:
+                        optimizer.step()
 
                     if (
                         training_type == TrainingType.SAE_FULL_FINETUNE
@@ -1039,6 +1057,3 @@ def remove_gradient_parallel_to_decoder_directions(
         "d_sae, d_in d_sae -> d_in d_sae",
     )
     return W_dec_DF_grad
-
-
-# Add more utility functions as needed...

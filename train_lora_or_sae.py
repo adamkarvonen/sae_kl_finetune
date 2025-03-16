@@ -374,7 +374,7 @@ if __name__ == "__main__":
         )
         dtype = torch.bfloat16
         use_16_bit = True
-        args.batch_size = 1
+        args.batch_size = 2
     elif args.model_type == "pythia":
         model_name = "EleutherAI/pythia-160m-deduped"
         sae_repo = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0108"
@@ -409,7 +409,7 @@ if __name__ == "__main__":
             sae_from_hf=False,
             dataset=dataset_name,
             experiment_name=f"{args.model_type}_LoRA_adapter_experiments",
-            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}",
+            run_name=f"layer_{layer}_rank_{rank}_{training_type.value}_v4",
             sae_layer=layer,
             peft_layers=LoRA_layers,
             peft_type="both",

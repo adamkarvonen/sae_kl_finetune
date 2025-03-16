@@ -8,14 +8,14 @@ def run_command(cmd):
 
 
 # Base command template
-base_cmd = "python train_lora_or_sae.py --device 0 --model_type gemma --sae_layer 12 --num_train_examples 15000 --save_model --trainer_id 2"
+base_cmd = "python train_lora_or_sae.py --device 0 --model_type gemma --sae_layer 12 --num_train_examples 30000 --save_model --trainer_id 2"
 
 # Run the single SAE full finetune with rank 1
 cmd = f"{base_cmd} --rank 16 --LoRA_layers sae_full_finetune"
 run_command(cmd)
 
 # Parameters to iterate over
-ranks = [16, 64, 768]
+ranks = [16, 768]
 lora_layers = [
     "adapter_only",
     "adapter_and_sae",
