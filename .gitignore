@@ -9,3 +9,5 @@ saved_models
 *.pkl
 *.venv
 *.json
+*.DS_Store
+*saved_models*/
