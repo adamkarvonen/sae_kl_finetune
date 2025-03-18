@@ -26,14 +26,17 @@ df[rank_768_col] = pd.to_numeric(df[rank_768_col], errors="coerce")
 df[rank_16_col] = pd.to_numeric(df[rank_16_col], errors="coerce")
 df = df.dropna(subset=[rank_768_col, rank_16_col])
 
+# Convert steps to millions of tokens (each step is 1000 tokens)
+df[step_col] = df[step_col] / 1000
+
 # The actual transition step is between 14998 and 15998 (based on data)
 # Using 15500 as a visual transition point - halfway between the actual data points
-transition_step = 15500
+transition_step = 15.5  # Converted to millions of tokens
 
 # Create separate dataframes but include the transition points in both
 # to ensure there's no gap in the plot lines
-df_before = df[df[step_col] <= 15998].copy()  # Include first point after transition
-df_after = df[df[step_col] >= 14998].copy()  # Include last point before transition
+df_before = df[df[step_col] <= 16.0].copy()  # Include first point after transition
+df_after = df[df[step_col] >= 15.0].copy()  # Include last point before transition
 
 # Plot the first stage (SAE-only) with dashed lines
 plt.plot(
@@ -119,7 +122,7 @@ plt.axhline(
 )
 
 # Add labels
-plt.xlabel("Training Tokens", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
 plt.ylabel("Validation Loss", fontweight="bold", fontsize=14)
 
 # Set custom y-axis limit

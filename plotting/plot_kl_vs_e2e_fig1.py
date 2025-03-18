@@ -26,11 +26,15 @@ e2e_df = df[[step_col, e2e_col]].copy()
 e2e_df = e2e_df[e2e_df[e2e_col] != ""]
 e2e_df = e2e_df.dropna(subset=[e2e_col])
 e2e_df[e2e_col] = e2e_df[e2e_col].astype(float)
+# Convert steps to millions of tokens (each step is 1000 tokens)
+e2e_df[step_col] = e2e_df[step_col] / 1000
 
 msc_df = df[[step_col, msc_col]].copy()
 msc_df = msc_df[msc_df[msc_col] != ""]
 msc_df = msc_df.dropna(subset=[msc_col])
 msc_df[msc_col] = msc_df[msc_col].astype(float)
+# Convert steps to millions of tokens (each step is 1000 tokens)
+msc_df[step_col] = msc_df[step_col] / 1000
 
 # Plot each line separately using clean DataFrames
 plt.plot(
@@ -63,7 +67,7 @@ plt.axhline(
 )
 
 # Add labels
-plt.xlabel("Training Tokens", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
 plt.ylabel("Validation Loss", fontweight="bold", fontsize=14)
 # plt.title("Gemma LoRA Training Comparison", fontsize=16)
 

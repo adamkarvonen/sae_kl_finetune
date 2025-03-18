@@ -64,6 +64,9 @@ for col in [
     line_df = line_df.dropna(subset=[col])
     line_df[col] = line_df[col].astype(float)
 
+    # Convert steps to millions of tokens (each step is 1000 tokens)
+    line_df[step_col] = line_df[step_col] / 1000
+
     # Store min value for y-axis scaling
     if not line_df.empty:
         all_min_values.append(line_df[col].min())
@@ -87,7 +90,6 @@ y_min = (
 )
 y_max = max(all_max_values + [original_model_loss]) + 0.01
 
-
 plt.axhline(
     y=original_model_loss,
     color="k",  # black for better visibility
@@ -97,7 +99,7 @@ plt.axhline(
 )
 
 # Add labels
-plt.xlabel("Training Tokens", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
 plt.ylabel("Validation Loss", fontweight="bold", fontsize=14)
 
 # Set custom y-axis limit

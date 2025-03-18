@@ -50,6 +50,8 @@ for col in df.columns:
     line_df = line_df[line_df[col] != ""]
     line_df = line_df.dropna(subset=[col])
     line_df[col] = line_df[col].astype(float)
+    # Convert steps to millions of tokens (each step is 1000 tokens)
+    line_df[step_col] = line_df[step_col] / 1000
 
     line_dfs[col] = line_df
 
@@ -93,7 +95,7 @@ plt.axhline(
 )
 
 # Add labels and styling
-plt.xlabel("Training Tokens", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
 plt.ylabel("Validation Loss", fontweight="bold", fontsize=14)
 
 # Set custom y-axis limit
@@ -101,7 +103,6 @@ plt.autoscale(tight=True)
 plt.ylim(bottom=y_min, top=2.45)
 
 # Add grid for better readability
-
 plt.grid(True, linestyle="--", alpha=0.7)
 
 # Add legend with better organization

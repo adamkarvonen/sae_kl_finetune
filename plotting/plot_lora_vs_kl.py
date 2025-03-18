@@ -27,16 +27,22 @@ lora_all_df = df[[step_col, lora_all_col]].copy()
 lora_all_df = lora_all_df[lora_all_df[lora_all_col] != ""]
 lora_all_df = lora_all_df.dropna(subset=[lora_all_col])
 lora_all_df[lora_all_col] = lora_all_df[lora_all_col].astype(float)
+# Convert steps to millions of tokens (each step is 1000 tokens)
+lora_all_df[step_col] = lora_all_df[step_col] / 1000
 
 lora_after_df = df[[step_col, lora_after_col]].copy()
 lora_after_df = lora_after_df[lora_after_df[lora_after_col] != ""]
 lora_after_df = lora_after_df.dropna(subset=[lora_after_col])
 lora_after_df[lora_after_col] = lora_after_df[lora_after_col].astype(float)
+# Convert steps to millions of tokens (each step is 1000 tokens)
+lora_after_df[step_col] = lora_after_df[step_col] / 1000
 
 sae_ft_df = df[[step_col, sae_ft_col]].copy()
 sae_ft_df = sae_ft_df[sae_ft_df[sae_ft_col] != ""]
 sae_ft_df = sae_ft_df.dropna(subset=[sae_ft_col])
 sae_ft_df[sae_ft_col] = sae_ft_df[sae_ft_col].astype(float)
+# Convert steps to millions of tokens (each step is 1000 tokens)
+sae_ft_df[step_col] = sae_ft_df[step_col] / 1000
 
 # Plot each line separately using clean DataFrames
 plt.plot(
@@ -94,7 +100,7 @@ y_max = max(
 # )
 
 # Add labels
-plt.xlabel("Training Tokens (thousands)", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
 plt.ylabel("Validation Loss", fontweight="bold", fontsize=14)
 # plt.title("LoRA and SAE Training Comparison", fontsize=16)
 
