@@ -899,30 +899,29 @@ def train_model(
             train_loop.close()
 
         # Final evaluation
-        if not track_evals:
-            val_loss = evaluate(peft_model, val_dataset)
-            total_training_minutes += training_time_between_evals / 60
+        val_loss = evaluate(peft_model, val_dataset)
+        total_training_minutes += training_time_between_evals / 60
 
-            train_losses.append(total_loss / total_examples)
-            val_losses.append(val_loss)
-            total_training_minutes_list.append(total_training_minutes)
+        train_losses.append(total_loss / total_examples)
+        val_losses.append(val_loss)
+        total_training_minutes_list.append(total_training_minutes)
 
-            wandb.log(
-                {
-                    "examples_processed": total_examples,
-                    "train_loss": total_loss / total_examples,
-                    "val_loss": val_loss,
-                    "training_minutes_between_evals": training_time_between_evals / 60,
-                    "total_training_minutes": total_training_minutes,
-                },
-                step=total_examples,
-            )
+        wandb.log(
+            {
+                "examples_processed": total_examples,
+                "train_loss": total_loss / total_examples,
+                "val_loss": val_loss,
+                "training_minutes_between_evals": training_time_between_evals / 60,
+                "total_training_minutes": total_training_minutes,
+            },
+            step=total_examples,
+        )
 
-            print(
-                f"Final Evaluation: Train Loss: {total_loss / total_examples:.4f}, "
-                f"Val Loss: {val_loss:.4f}, "
-                f"Total Training Minutes: {total_training_minutes:.2f}"
-            )
+        print(
+            f"Final Evaluation: Train Loss: {total_loss / total_examples:.4f}, "
+            f"Val Loss: {val_loss:.4f}, "
+            f"Total Training Minutes: {total_training_minutes:.2f}"
+        )
 
     return val_losses, total_training_minutes_list
 

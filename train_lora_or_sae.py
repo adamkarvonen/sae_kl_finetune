@@ -271,7 +271,7 @@ if __name__ == "__main__":
         "--num_train_examples",
         type=int,
         help="Number of training examples",
-        choices=[30, 150, 300, 3_000, 15_000, 30_000, 100_000],
+        choices=[30, 150, 300, 3_000, 15_000, 25_000, 30_000, 100_000],
         required=True,
     )
     parser.add_argument(
