@@ -13,7 +13,7 @@ os.makedirs(image_dir, exist_ok=True)
 plt.figure(figsize=(10, 6))
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["font.serif"] = ["Times New Roman"]
-plt.rcParams["font.size"] = 12
+plt.rcParams["font.size"] = 18
 
 # Explicitly get column names to avoid indexing issues
 all_cols = list(df.columns)
@@ -93,7 +93,7 @@ plt.text(
     "SAE Training",
     ha="center",
     va="bottom",
-    fontsize=12,
+    fontsize=18,
     fontweight="bold",
 )
 plt.text(
@@ -102,7 +102,7 @@ plt.text(
     "Adapter Training",
     ha="center",
     va="bottom",
-    fontsize=12,
+    fontsize=18,
     fontweight="bold",
 )
 
@@ -122,18 +122,22 @@ plt.axhline(
 )
 
 # Add labels
-plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
-plt.ylabel("Validation Loss", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=18)
+plt.ylabel("Validation Loss", fontweight="bold", fontsize=18)
 
 # Set custom y-axis limit
 plt.autoscale(tight=True)
-plt.ylim(bottom=y_min, top=y_max)  # Adjusted limits
+plt.ylim(bottom=y_min, top=y_max)
 
 # Add grid for better readability
 plt.grid(True, linestyle="--", alpha=0.7)
 
 # Add legend - place it in the upper right to avoid overlap with plot lines
-plt.legend(frameon=True, fontsize=10, loc="upper right")
+plt.legend(frameon=True, fontsize=16, loc="upper right")
+
+# Increase tick label sizes
+plt.xticks(fontsize=18)
+plt.yticks(fontsize=18)
 
 # Ensure tight layout
 plt.tight_layout()

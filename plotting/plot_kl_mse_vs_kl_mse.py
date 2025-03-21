@@ -25,7 +25,7 @@ def smooth_data(y, alpha=0.1):
 plt.figure(figsize=(10, 6))
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["font.serif"] = ["Times New Roman"]
-plt.rcParams["font.size"] = 12
+plt.rcParams["font.size"] = 18
 
 # Explicitly get column names to avoid indexing issues
 all_cols = list(df.columns)
@@ -97,8 +97,8 @@ plt.plot(
 )
 
 # Add labels
-plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=14)
-plt.ylabel("Training MSE (with EMA smoothing)", fontweight="bold", fontsize=14)
+plt.xlabel("Training Tokens (millions)", fontweight="bold", fontsize=18)
+plt.ylabel("Training MSE (with EMA smoothing)", fontweight="bold", fontsize=18)
 # plt.title("Gemma LoRA Training Comparison", fontsize=16)
 
 # Set custom y-axis limit
@@ -109,7 +109,11 @@ plt.autoscale(tight=True)
 plt.grid(True, linestyle="--", alpha=0.7)
 
 # Add legend
-plt.legend(frameon=True, fontsize=12)
+plt.legend(frameon=True, fontsize=18)
+
+# Increase tick label sizes
+plt.xticks(fontsize=18)
+plt.yticks(fontsize=18)
 
 # Ensure tight layout
 plt.tight_layout()

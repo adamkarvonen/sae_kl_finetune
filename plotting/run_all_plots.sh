@@ -20,5 +20,5 @@ run_plot_script "plot_kl_mse_vs_kl_mse.py"
 run_plot_script "plot_kl_mse_vs_kl_val_loss.py"
 run_plot_script "plot_kl_vs_e2e_4_saes.py"
 run_plot_script "plot_kl_vs_e2e_fig1.py"
-
+run_plot_script "plot_sae_lora_experiment.py"
 echo "All plots have been generated successfully!" 

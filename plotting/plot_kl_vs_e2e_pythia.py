@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-data_dir = "paper_data/gemma_LoRA_from_scratch_kl_vs_e2e_fig1_data.csv"
+data_dir = "paper_data/pythia_e2e_vs_kl.csv"
 # Load the CSV file
 df = pd.read_csv(data_dir)
 image_dir = "paper_images"
@@ -56,7 +56,7 @@ plt.plot(
 )
 
 # Add horizontal line for original model loss
-original_model_loss = 2.0759266334277946
+original_model_loss = 3.06577
 y_min = original_model_loss - 0.01
 plt.axhline(
     y=original_model_loss,
@@ -73,7 +73,7 @@ plt.ylabel("Validation Loss", fontweight="bold", fontsize=18)
 
 # Set custom y-axis limit
 plt.autoscale(tight=True)
-plt.ylim(bottom=y_min, top=2.25)
+plt.ylim(bottom=y_min, top=3.6)
 
 # Add grid for better readability
 plt.grid(True, linestyle="--", alpha=0.7)
@@ -90,7 +90,7 @@ plt.tight_layout()
 
 # Save the figure
 plt.savefig(
-    f"{image_dir}/gemma_lora_comparison.png", format="png", dpi=300, bbox_inches="tight"
+    f"{image_dir}/pythia_e2e_vs_kl.png", format="png", dpi=300, bbox_inches="tight"
 )
 
 # plt.show()

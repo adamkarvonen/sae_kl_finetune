@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-data_dir = "paper_data/lora_vs_kl_finetune.csv"
+data_dir = "paper_data/sae_lora_experiment.csv"
 # Load the CSV file
 df = pd.read_csv(data_dir)
 image_dir = "paper_images"
@@ -18,49 +18,47 @@ plt.rcParams["font.size"] = 18
 # Explicitly get column names to avoid indexing issues
 all_cols = list(df.columns)
 step_col = all_cols[0]  # "Step" column
-lora_all_col = all_cols[1]  # "layer_12_rank_16_lora_trainer_2_all - val_loss"
-lora_after_col = all_cols[4]  # "layer_12_rank_16_lora_trainer_2_after - val_loss"
-sae_ft_col = all_cols[7]  # "layer_12_rank_16_sae_full_finetune_trainer_2 - val_loss"
+sae_lora_64_col = all_cols[1]  # "layer_12_rank_64_sae_lora - val_loss"
+sae_lora_2_col = all_cols[4]  # "layer_12_rank_2_sae_lora - val_loss"
+sae_ft_col = all_cols[7]  # "layer_12_rank_16_sae_full_finetune - val_loss"
 
 # Filter and create separate DataFrames for each line to avoid NaN issues
-lora_all_df = df[[step_col, lora_all_col]].copy()
-lora_all_df = lora_all_df[lora_all_df[lora_all_col] != ""]
-lora_all_df = lora_all_df.dropna(subset=[lora_all_col])
-lora_all_df[lora_all_col] = lora_all_df[lora_all_col].astype(float)
-# Convert steps to millions of tokens (each step is 1000 tokens)
-lora_all_df[step_col] = lora_all_df[step_col] / 1000
+sae_lora_64_df = df[[step_col, sae_lora_64_col]].copy()
+sae_lora_64_df = sae_lora_64_df[sae_lora_64_df[sae_lora_64_col] != ""]
+sae_lora_64_df = sae_lora_64_df.dropna(subset=[sae_lora_64_col])
+sae_lora_64_df[sae_lora_64_col] = sae_lora_64_df[sae_lora_64_col].astype(float)
+sae_lora_64_df[step_col] = sae_lora_64_df[step_col]
 
-lora_after_df = df[[step_col, lora_after_col]].copy()
-lora_after_df = lora_after_df[lora_after_df[lora_after_col] != ""]
-lora_after_df = lora_after_df.dropna(subset=[lora_after_col])
-lora_after_df[lora_after_col] = lora_after_df[lora_after_col].astype(float)
-# Convert steps to millions of tokens (each step is 1000 tokens)
-lora_after_df[step_col] = lora_after_df[step_col] / 1000
+sae_lora_2_df = df[[step_col, sae_lora_2_col]].copy()
+sae_lora_2_df = sae_lora_2_df[sae_lora_2_df[sae_lora_2_col] != ""]
+sae_lora_2_df = sae_lora_2_df.dropna(subset=[sae_lora_2_col])
+sae_lora_2_df[sae_lora_2_col] = sae_lora_2_df[sae_lora_2_col].astype(float)
+sae_lora_2_df[step_col] = sae_lora_2_df[step_col]
 
 sae_ft_df = df[[step_col, sae_ft_col]].copy()
 sae_ft_df = sae_ft_df[sae_ft_df[sae_ft_col] != ""]
 sae_ft_df = sae_ft_df.dropna(subset=[sae_ft_col])
 sae_ft_df[sae_ft_col] = sae_ft_df[sae_ft_col].astype(float)
 # Convert steps to millions of tokens (each step is 1000 tokens)
-sae_ft_df[step_col] = sae_ft_df[step_col] / 1000
+sae_ft_df[step_col] = sae_ft_df[step_col]
 
 # Plot each line separately using clean DataFrames
 plt.plot(
-    lora_all_df[step_col],
-    lora_all_df[lora_all_col],
+    sae_lora_64_df[step_col],
+    sae_lora_64_df[sae_lora_64_col],
     linestyle="-",
     linewidth=2,
     color="#1f77b4",
-    label="LoRA After Layers",
+    label="SAE LoRA Rank 64",
 )
 
 plt.plot(
-    lora_after_df[step_col],
-    lora_after_df[lora_after_col],
+    sae_lora_2_df[step_col],
+    sae_lora_2_df[sae_lora_2_col],
     linestyle="-",
     linewidth=2,
     color="#ff7f0e",
-    label="LoRA All Layers",
+    label="SAE LoRA Rank 2",
 )
 
 plt.plot(
@@ -68,8 +66,8 @@ plt.plot(
     sae_ft_df[sae_ft_col],
     linestyle="-",
     linewidth=2,
-    color="#2ca02c",  # Green color for the third line
-    label="SAE Fine Tune",
+    color="#2ca02c",
+    label="SAE Full Fine-tune",
 )
 
 # Add horizontal line for original model loss if you still want it
@@ -77,16 +75,16 @@ plt.plot(
 # original_model_loss = 1.9574154930812675
 y_min = (
     min(
-        lora_all_df[lora_all_col].min(),
-        lora_after_df[lora_after_col].min(),
+        sae_lora_64_df[sae_lora_64_col].min(),
+        sae_lora_2_df[sae_lora_2_col].min(),
         sae_ft_df[sae_ft_col].min(),
         # original_model_loss,
     )
     - 0.01
 )
 y_max = max(
-    lora_all_df[lora_all_col].max(),
-    lora_after_df[lora_after_col].max(),
+    sae_lora_64_df[sae_lora_64_col].max(),
+    sae_lora_2_df[sae_lora_2_col].max(),
     sae_ft_df[sae_ft_col].max(),
     # original_model_loss,
 )
@@ -124,7 +122,7 @@ plt.tight_layout()
 
 # Save the figure with the new filename
 plt.savefig(
-    f"{image_dir}/lora_sae_comparison.png", format="png", dpi=300, bbox_inches="tight"
+    f"{image_dir}/sae_lora_experiment.png", format="png", dpi=300, bbox_inches="tight"
 )
 
 # plt.show()
