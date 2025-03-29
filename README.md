@@ -36,6 +36,8 @@ You will also need to request access to the Gemma-2-2B model on HuggingFace.
 
 To replicate the KL+MSE finetuning, run `python run.py`.
 
+The fine-tuned SAE Bench SAEs can be found here: https://huggingface.co/adamkarvonen/new_kl_finetunes
+
 ## Repo Structure & Branches
 
 Rather than combining everything into one large and configurable codebase, I’ve implemented different experimental variants in **separate branches**, each with a minimal and focused setup. This helps keep each codebase clean and easier to understand.
