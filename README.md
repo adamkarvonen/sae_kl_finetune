@@ -1,3 +1,55 @@
+## About This Repository
+
+This repository is a **modified and extended version** of the [LoRA-Models-for-SAEs](https://github.com/matchten/LoRA-Models-for-SAEs) codebase, originally developed for the paper:  
+> [**"Low Rank Adapting Models for Sparse Autoencoder Features"**](https://arxiv.org/abs/2501.19406v1)
+
+The original repo is MIT-licensed. Thanks to the authors for making their work publicly available.
+
+---
+
+## My Follow-Up Work
+
+This repo accompanies my paper:  
+> [**Revisiting End-To-End Sparse Autoencoder Training: A Short Finetune Is All You Need**](https://arxiv.org/abs/2503.17272)
+
+In this work, I explore methods for improving the **cross-entropy loss alignment** between SAE-reconstructed and original model logits. I find that:
+
+- A brief **KL + MSE fine-tuning step** (on the last 25M tokens) significantly improves reconstruction quality.
+- Multiple methods (LoRA, KL fine-tuning, linear adapters) yield **similar and non-additive gains**, pointing to a shared fixable error in MSE-trained SAEs.
+
+---
+
+## Setup
+
+First install dependencies:
+
+`pip install -r requirements.txt`
+
+You’ll need to authenticate with both Weights & Biases and Hugging Face:
+
+```
+wandb login <your-wandb-key>
+huggingface-cli login --token <your_hf_token>
+```
+
+You will also need to request access to the Gemma-2-2B model on HuggingFace.
+
+To replicate the KL+MSE finetuning, run `python run.py`.
+
+## Repo Structure & Branches
+
+Rather than combining everything into one large and configurable codebase, I’ve implemented different experimental variants in **separate branches**, each with a minimal and focused setup. This helps keep each codebase clean and easier to understand.
+
+- [`main`](https://github.com/adamkarvonen/sae_kl_finetune/tree/main): Brief KL+MSE fine-tuning on top of SAE Bench TopK MSE-trained SAEs  
+- [`linear-adapter`](https://github.com/adamkarvonen/sae_kl_finetune/tree/linear-adapter): Linear / MLP adapters to correct SAE outputs post-hoc.
+- [`from_scratch`](https://github.com/adamkarvonen/sae_kl_finetune/tree/from_scratch): Train KL+MSE SAEs from scratch
+- [`relu`](https://github.com/adamkarvonen/sae_kl_finetune/tree/relu): Brief KL+MSE fine-tuning on top of SAE Bench ReLU MSE-trained SAEs 
+
+To replicate any experiment, just run `python run.py` in the correct branch.
+
+
+## Original Repo README Below
+
 ![Visual Representation of Low Rank Adapting Models for SAEs](plots/LoRA-SAE_setup.jpg)
 
 # LoRA-Models-for-SAEs
