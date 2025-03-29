@@ -45,16 +45,31 @@ plt.plot(
     color="#1f77b4",
     label="Full KL+MSE Training",
 )
+finetune_start = 475000 / 1000  # convert to millions
 
+# Split the DataFrame
+msc_pre_ft = msc_df[msc_df[step_col] <= finetune_start]
+msc_post_ft = msc_df[msc_df[step_col] >= finetune_start]
+
+# Plot pre-finetune
 plt.plot(
-    msc_df[step_col],
-    msc_df[msc_col],
+    msc_pre_ft[step_col],
+    msc_pre_ft[msc_col],
     linestyle="-",
     linewidth=2,
     color="#ff7f0e",
-    label="MSE Training w/ KL+MSE Finetune",
+    label="MSE Training",
 )
 
+# Plot post-finetune with new color
+plt.plot(
+    msc_post_ft[step_col],
+    msc_post_ft[msc_col],
+    linestyle="-",
+    linewidth=2,
+    color="#d62728",
+    label="KL+MSE Finetune",
+)
 # Add horizontal line for original model loss
 original_model_loss = 3.06577
 y_min = original_model_loss - 0.01
